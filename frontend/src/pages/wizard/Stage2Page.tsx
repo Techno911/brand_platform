@@ -272,14 +272,35 @@ export default function Stage2Page() {
         const { legend, values, mission } = res.data;
         const toBlockState = (s: BlockSnapshot): BlockState => {
           if (!s.draft && !s.text) return { ...INITIAL_STATE };
+          // Defensive decode: в старых строках БД draft мог лечь строкой-JSON (старый
+          // `r.text ?? r.json` путь до 2026-04-20). Фронт-side LegendView / ValuesView
+          // падали в FallbackText и рендерили сырой JSON. Пробуем распарсить: если
+          // получился объект — отдаём его как json, иначе оставляем в text (и тогда
+          // FallbackText хотя бы покажет plain text, не «нестандартный вид»).
+          let draftJson: unknown = s.draft;
+          let draftText: string | undefined;
+          if (typeof s.draft === 'string') {
+            const trimmed = s.draft.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              try {
+                draftJson = JSON.parse(trimmed);
+              } catch {
+                draftJson = null;
+                draftText = trimmed;
+              }
+            } else {
+              draftJson = null;
+              draftText = trimmed;
+            }
+          }
           return {
             text: s.text ?? '',
             result: s.draft
               ? ({
                   promptRunId: 'restored',
                   status: 'ok',
-                  json: s.draft,
-                  text: typeof s.draft === 'string' ? s.draft : undefined,
+                  json: draftJson ?? null,
+                  text: draftText,
                 } as AIResult)
               : null,
             elapsed: 0,

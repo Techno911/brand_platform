@@ -57,7 +57,12 @@ export class Stage2Service {
     if (r.ok) {
       const row = await this.wizard.createRow(projectId, 4, 'legend_fact', {
         ownerText: ownerTranscript,
-        draft: r.text ?? r.json,
+        // r.json — распарсенный объект (приоритет). r.text — сырая JSON-строка, на
+        // неё fallback только если парсинг не удался. Раньше было `r.text ?? r.json`
+        // — и draft оседал в БД строкой, а фронт-side LegendView требовал object
+        // (isObject-guard), падал в FallbackText и печатал весь JSON как текст.
+        // Артём 2026-04-20: скриншот с сырым `{"legend":{"founder":{"name":"Анна"...`.
+        draft: r.json ?? r.text,
       });
       return { row, ai: r };
     }
@@ -77,7 +82,7 @@ export class Stage2Service {
     if (r.ok) {
       const row = await this.wizard.createRow(projectId, 4, 'value', {
         ownerText: ownerTranscript,
-        draft: r.text ?? r.json,
+        draft: r.json ?? r.text,
       });
       return { row, ai: r };
     }
@@ -97,7 +102,7 @@ export class Stage2Service {
     if (r.ok) {
       const row = await this.wizard.createRow(projectId, 4, 'mission_variant', {
         ownerText: ownerTranscript,
-        variants: r.text ?? r.json,
+        variants: r.json ?? r.text,
       });
       return { row, ai: r };
     }

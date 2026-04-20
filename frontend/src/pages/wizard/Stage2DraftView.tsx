@@ -44,28 +44,51 @@ interface LegendOrigin {
   founder_role?: string;
   reason_to_start?: string;
 }
+// Реально Claude возвращает два варианта milestone-полей (schema-дрейф):
+//   А. {year, event, why_matters} — как просил промпт (expectedOutputSchema).
+//   Б. {date, fact} — то, что Claude часто отдаёт «по-своему» (краткая форма).
+// LegendView принимает оба и нормализует при рендере.
 interface LegendMilestone {
   year?: number;
   event?: string;
   why_matters?: string;
+  date?: string | number;
+  fact?: string;
 }
-interface LegendTurningPoint {
-  year?: number;
-  event?: string;
-  before?: string;
-  after?: string;
-}
+// Аналогично — turning_point может прийти как объект {year, event, before, after}
+// (строгая схема) ИЛИ как одна строка (упрощённый ответ Claude).
+type LegendTurningPoint =
+  | string
+  | {
+      year?: number;
+      event?: string;
+      before?: string;
+      after?: string;
+    };
 interface LegendCurrentState {
   team_size?: number;
   geography?: string;
   typical_check_rub?: number;
 }
+// Claude в живых прогонах часто возвращает короткую форму {founder: {name, role}}
+// вместо полной {origin: {founder_name, founder_role}}. Поддерживаем оба уровня
+// без пересогласования промпта — иначе на каждом дрейфе Claude маркетолог видел бы
+// сырой JSON. Артём 2026-04-20: скриншот со `{"legend":{"founder":{"name":"Анна"...`.
+interface LegendFounderShort {
+  name?: string;
+  role?: string;
+}
 interface LegendData {
   legend?: {
     origin?: LegendOrigin;
+    founder?: LegendFounderShort;
     milestones?: LegendMilestone[];
     turning_point?: LegendTurningPoint;
     current_state?: LegendCurrentState;
+    // Claude иногда кладёт warnings/unverified_claims ВНУТРИ legend,
+    // хотя schema просит их на верхнем уровне. Читаем оба места.
+    warnings?: string[];
+    unverified_claims?: string[];
   };
   unverified_claims?: string[];
   warnings?: string[];
@@ -193,91 +216,133 @@ function LegendView({ data }: { data: LegendData | string | unknown }) {
   if (!hasLegend) {
     return <FallbackText raw={data} />;
   }
-  const { origin, milestones, turning_point, current_state } = d.legend!;
+  const { origin, founder, milestones, turning_point, current_state } = d.legend!;
+
+  // Схема-дрейф compat: founder на верхнем уровне (реальный выход Claude) +
+  // origin.founder_name/role (expectedOutputSchema). Нормализуем в одно представление.
+  const founderName = origin?.founder_name ?? founder?.name;
+  const founderRole = origin?.founder_role ?? founder?.role;
+  const hasOriginBlock =
+    origin?.year !== undefined ||
+    isNonEmptyString(origin?.place) ||
+    isNonEmptyString(origin?.reason_to_start) ||
+    isNonEmptyString(founderName);
+
+  // warnings/unverified_claims могут лежать снаружи `legend` (promo schema)
+  // или внутри `legend` (Claude реальность). Объединяем без дублей.
+  const mergedWarnings = Array.from(
+    new Set([...(d.warnings ?? []), ...((d.legend?.warnings ?? []) as string[])]),
+  );
+  const mergedUnverified = Array.from(
+    new Set([
+      ...(d.unverified_claims ?? []),
+      ...((d.legend?.unverified_claims ?? []) as string[]),
+    ]),
+  );
+
+  // turning_point может быть строкой (упрощённая форма) или объектом {year, event, before, after}.
+  // Рендерим в обоих случаях — строку как самостоятельный абзац, объект как до/после-карточки.
+  const tpIsObject = isObject(turning_point);
+  const tpString = typeof turning_point === 'string' && turning_point.trim().length > 0 ? turning_point : null;
 
   return (
     <div className="space-y-5">
-      {/* Origin */}
-      {origin && (
+      {/* Origin / Founder */}
+      {hasOriginBlock && (
         <div>
           <SectionTitle>Точка старта</SectionTitle>
           <div className="flex flex-wrap gap-2 mb-2">
-            {origin.year !== undefined && <Chip icon={CalendarDays}>{origin.year}</Chip>}
-            {isNonEmptyString(origin.place) && <Chip icon={MapPin}>{origin.place}</Chip>}
-            {isNonEmptyString(origin.founder_name) && (
+            {origin?.year !== undefined && <Chip icon={CalendarDays}>{origin.year}</Chip>}
+            {isNonEmptyString(origin?.place) && <Chip icon={MapPin}>{origin!.place!}</Chip>}
+            {isNonEmptyString(founderName) && (
               <Chip icon={User2}>
-                {origin.founder_name}
-                {isNonEmptyString(origin.founder_role) && ` · ${origin.founder_role}`}
+                {founderName}
+                {isNonEmptyString(founderRole) && ` · ${founderRole}`}
               </Chip>
             )}
           </div>
-          {isNonEmptyString(origin.reason_to_start) && (
-            <p className="text-[14px] leading-relaxed text-[#1A1A1A]">{origin.reason_to_start}</p>
+          {isNonEmptyString(origin?.reason_to_start) && (
+            <p className="text-[14px] leading-relaxed text-[#1A1A1A]">{origin!.reason_to_start}</p>
           )}
         </div>
       )}
 
-      {/* Milestones */}
+      {/* Milestones (two shapes supported: {year,event,why_matters} and {date,fact}) */}
       {Array.isArray(milestones) && milestones.length > 0 && (
         <div>
           <SectionTitle>Поворотные даты</SectionTitle>
           <ol className="space-y-3 border-l-2 border-[#E7E5E4] pl-4">
-            {milestones.map((m, i) => (
-              <li key={i} className="relative">
-                <span
-                  className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-[#4F46E5]"
-                  aria-hidden
-                />
-                <div className="font-mono text-[11px] text-[#78716C] tabular-nums mb-0.5">
-                  {m.year ?? '—'}
-                </div>
-                {isNonEmptyString(m.event) && (
-                  <p className="font-medium text-[14px] text-[#1A1A1A] leading-snug">{m.event}</p>
-                )}
-                {isNonEmptyString(m.why_matters) && (
-                  <p className="text-[13px] text-[#78716C] mt-0.5 leading-relaxed">{m.why_matters}</p>
-                )}
-              </li>
-            ))}
+            {milestones.map((m, i) => {
+              const when = m.year ?? m.date ?? '—';
+              const what = isNonEmptyString(m.event) ? m.event : isNonEmptyString(m.fact) ? m.fact : null;
+              return (
+                <li key={i} className="relative">
+                  <span
+                    className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-[#4F46E5]"
+                    aria-hidden
+                  />
+                  <div className="font-mono text-[11px] text-[#78716C] tabular-nums mb-0.5">{when}</div>
+                  {what && (
+                    <p className="font-medium text-[14px] text-[#1A1A1A] leading-snug">{what}</p>
+                  )}
+                  {isNonEmptyString(m.why_matters) && (
+                    <p className="text-[13px] text-[#78716C] mt-0.5 leading-relaxed">{m.why_matters}</p>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </div>
       )}
 
-      {/* Turning point */}
-      {turning_point && (isNonEmptyString(turning_point.event) || turning_point.year !== undefined) && (
+      {/* Turning point: string OR object */}
+      {tpString && (
         <div>
           <SectionTitle>Перелом</SectionTitle>
-          <div className="bg-[#FAFAF9] border border-[#E7E5E4] rounded-xl p-4 space-y-3">
-            <div className="flex items-baseline gap-3">
-              {turning_point.year !== undefined && (
-                <span className="font-mono text-[14px] tabular-nums text-[#4F46E5] font-semibold">
-                  {turning_point.year}
-                </span>
-              )}
-              {isNonEmptyString(turning_point.event) && (
-                <p className="font-medium text-[14px] text-[#1A1A1A]">{turning_point.event}</p>
-              )}
-            </div>
-            {(isNonEmptyString(turning_point.before) || isNonEmptyString(turning_point.after)) && (
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
-                <div className="bg-white border border-[#E7E5E4] rounded-lg p-3">
-                  <p className="uppercase-mono text-[#78716C] mb-1">До</p>
-                  <p className="text-[13px] text-[#44403C] leading-relaxed">
-                    {turning_point.before ?? '—'}
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-[#A8A29E] hidden sm:block justify-self-center" aria-hidden />
-                <div className="bg-white border border-[#86EFAC] rounded-lg p-3">
-                  <p className="uppercase-mono text-[#15803D] mb-1">После</p>
-                  <p className="text-[13px] text-[#44403C] leading-relaxed">
-                    {turning_point.after ?? '—'}
-                  </p>
-                </div>
-              </div>
-            )}
+          <div className="bg-[#FAFAF9] border border-[#E7E5E4] rounded-xl p-4">
+            <p className="text-[14px] text-[#1A1A1A] leading-relaxed">{tpString}</p>
           </div>
         </div>
       )}
+      {tpIsObject &&
+        (isNonEmptyString((turning_point as any).event) || (turning_point as any).year !== undefined) && (
+          <div>
+            <SectionTitle>Перелом</SectionTitle>
+            <div className="bg-[#FAFAF9] border border-[#E7E5E4] rounded-xl p-4 space-y-3">
+              <div className="flex items-baseline gap-3">
+                {(turning_point as any).year !== undefined && (
+                  <span className="font-mono text-[14px] tabular-nums text-[#4F46E5] font-semibold">
+                    {(turning_point as any).year}
+                  </span>
+                )}
+                {isNonEmptyString((turning_point as any).event) && (
+                  <p className="font-medium text-[14px] text-[#1A1A1A]">{(turning_point as any).event}</p>
+                )}
+              </div>
+              {(isNonEmptyString((turning_point as any).before) ||
+                isNonEmptyString((turning_point as any).after)) && (
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
+                  <div className="bg-white border border-[#E7E5E4] rounded-lg p-3">
+                    <p className="uppercase-mono text-[#78716C] mb-1">До</p>
+                    <p className="text-[13px] text-[#44403C] leading-relaxed">
+                      {(turning_point as any).before ?? '—'}
+                    </p>
+                  </div>
+                  <ArrowRight
+                    className="w-5 h-5 text-[#A8A29E] hidden sm:block justify-self-center"
+                    aria-hidden
+                  />
+                  <div className="bg-white border border-[#86EFAC] rounded-lg p-3">
+                    <p className="uppercase-mono text-[#15803D] mb-1">После</p>
+                    <p className="text-[13px] text-[#44403C] leading-relaxed">
+                      {(turning_point as any).after ?? '—'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       {/* Current state */}
       {current_state && (
@@ -293,15 +358,15 @@ function LegendView({ data }: { data: LegendData | string | unknown }) {
         </div>
       )}
 
-      {/* Unverified claims */}
-      {Array.isArray(d.unverified_claims) && d.unverified_claims.length > 0 && (
+      {/* Unverified claims — объединённо из двух мест */}
+      {mergedUnverified.length > 0 && (
         <div>
           <SectionTitle>Утверждения без источника</SectionTitle>
           <p className="text-[12px] text-[#78716C] mb-2">
             Claude вынес это в отдельный список — перед утверждением легенды попросите собственника подтвердить.
           </p>
           <ul className="space-y-1.5">
-            {d.unverified_claims.map((c, i) => (
+            {mergedUnverified.map((c, i) => (
               <li key={i} className="flex items-start gap-2 text-[13px] text-[#44403C] leading-relaxed">
                 <AlertTriangle className="w-3.5 h-3.5 text-[#D97706] flex-shrink-0 mt-0.5" aria-hidden />
                 <span>{c}</span>
@@ -311,7 +376,7 @@ function LegendView({ data }: { data: LegendData | string | unknown }) {
         </div>
       )}
 
-      <WarningsBlock warnings={d.warnings} />
+      <WarningsBlock warnings={mergedWarnings} />
     </div>
   );
 }
