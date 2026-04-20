@@ -26,6 +26,15 @@ type Block = 'challenge' | 'legend' | 'values' | 'mission';
 
 const BLOCKS: Block[] = ['challenge', 'legend', 'values', 'mission'];
 
+// Challenge — live thinking-partner (маркетолог пастит ответы собственника, Claude
+// задаёт контр-вопросы), БЕЗ артефакта. Поэтому accept на challenge не персистится
+// и не считается для «готов ли черновик к отправке». Артефакты стадии 2 — только
+// legend/values/mission, их и гейтим для submitForApproval. Раньше allAccepted
+// требовал 4/4 включая challenge → после любого рефреша challenge.accepted = false
+// → кнопка «На одобрение собственника» permanently disabled даже при 3 валидных
+// артефактах. Обнаружено 2026-04-20 во время фикса inline-CTA карточки.
+const PERSISTENT_BLOCKS: Block[] = ['legend', 'values', 'mission'];
+
 const ENDPOINT: Record<Block, string> = {
   challenge: '/wizard/stage-2/challenge-owner',
   legend: '/wizard/stage-2/legend-draft',
@@ -533,11 +542,13 @@ export default function Stage2Page() {
     }
   };
 
+  // Счётчик / gate на отправку считаем по PERSISTENT_BLOCKS (3 артефакта),
+  // не по всем 4 — см. комментарий у PERSISTENT_BLOCKS выше.
   const acceptedCount = useMemo(
-    () => BLOCKS.filter((b) => blocks[b].accepted).length,
+    () => PERSISTENT_BLOCKS.filter((b) => blocks[b].accepted).length,
     [blocks],
   );
-  const allAccepted = acceptedCount === BLOCKS.length;
+  const allAccepted = acceptedCount === PERSISTENT_BLOCKS.length;
 
   // Контекстные подсказки — меняются при переключении вкладки.
   // Общая подсказка «собственник — не маркетолог» уехала в OnboardingBanner (верх страницы),
@@ -771,6 +782,29 @@ export default function Stage2Page() {
           ) : (
             <EmptyCanvasPlaceholder expectation={LABELS[active].canvasExpectation} />
           )}
+
+          {/* Inline CTA-карточка «все 3 артефакта готовы → отправляйте собственнику».
+              ВАЖНО: рендерится ВНЕ condition `current.result ? ... : ...`, потому что
+              полный-стейдж-completion — свойство стадии, а не текущей вкладки. Если
+              маркетолог принял legend/values/mission а сейчас открыл challenge-таб
+              (у которого result отсутствует), карточка всё равно видна — «что дальше»
+              не зависит от того, на какой tab сейчас клик. До этой карточки единственным
+              сигналом о завершении стадии был sticky bar внизу экрана + transient
+              AcceptToast на 2.5 сек. Артём 2026-04-20 (скриншот КДМ, 4/4 блока
+              утверждены): «И что дальше? Ни хрена же не понятно. Надо сделать, чтобы
+              было понятно.» Класс тот же что запись 2026-04-19 «Dead-end after
+              approval» — раньше был per-block (решил NextStepCard после accept одного
+              блока), теперь расширяется на per-stage: после accept всех артефактов —
+              отдельный визуальный якорь прямо под canvas'ом, где глаза маркетолога
+              уже смотрят. Sticky-бар остаётся внизу как дубль для контекста, но
+              основной триггер — эта карточка inline. */}
+          {allAccepted && !submittedAt && (
+            <StageCompleteCard
+              submitting={submitting}
+              onSubmit={submitForApproval}
+              error={error}
+            />
+          )}
         </div>
 
         {/* Suffler справа */}
@@ -787,7 +821,7 @@ export default function Stage2Page() {
         <AcceptToast
           from={LABELS[acceptToast.from].short}
           to={acceptToast.to ? LABELS[acceptToast.to].short : null}
-          allAccepted={acceptedCount === BLOCKS.length}
+          allAccepted={allAccepted}
         />
       )}
 
@@ -799,7 +833,10 @@ export default function Stage2Page() {
         <StickySubmittedBar submittedAt={submittedAt} projectId={id ?? ''} stage={2} />
       ) : (
         <StickySubmitBar
-          blocks={BLOCKS.map((b) => ({ label: LABELS[b].short, accepted: blocks[b].accepted }))}
+          blocks={PERSISTENT_BLOCKS.map((b) => ({
+            label: LABELS[b].short,
+            accepted: blocks[b].accepted,
+          }))}
           allAccepted={allAccepted}
           submitting={submitting}
           onSubmit={submitForApproval}
@@ -1030,6 +1067,74 @@ function AcceptToast({
               — все 4 блока готовы. Отправьте на одобрение собственника ↓
             </span>
           ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ———————————————————————————————————————————————————————————————
+// StageCompleteCard — inline CTA-карточка «все 4 блока утверждены →
+// отправляйте собственнику на одобрение». Отображается в canvas-колонке
+// прямо под FeedbackForm'ом (= там, где глаза маркетолога после accept
+// последнего блока). Зелёный success-colorway (совпадает с рамкой accepted
+// CanvasCard) + иконка-кружок + заголовок + пояснение + primary-CTA с
+// иконкой Send. Класс Dead-end-after-approval: запись 2026-04-19 решила
+// его per-block, эта карточка — его per-stage эквивалент.
+// Артём 2026-04-20 (скриншот КДМ): «И что дальше? Ни хрена же не понятно.»
+// ———————————————————————————————————————————————————————————————
+
+function StageCompleteCard({
+  submitting,
+  onSubmit,
+  error,
+}: {
+  submitting: boolean;
+  onSubmit: () => void;
+  error: string;
+}) {
+  return (
+    <div className="rounded-[20px] border-2 border-[#86EFAC] bg-[#F0FDF4] p-6">
+      <div className="flex items-start gap-4">
+        <div
+          className="w-10 h-10 rounded-full bg-[#22C55E] flex items-center
+            justify-center flex-shrink-0"
+          aria-hidden
+        >
+          <CheckCircle2 className="w-5 h-5 text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-semibold text-[#14532D]">
+            Все четыре блока утверждены — черновик стадии готов
+          </h3>
+          <p className="text-sm text-[#166534] mt-1.5 leading-relaxed">
+            Следующий шаг — отправить легенду, ценности, миссию и уточнения
+            собственнику на одобрение. Он получит уведомление, прочитает все
+            четыре блока и либо подпишет их, либо вернёт на правки с
+            комментариями. До подписи собственника стадия 3 остаётся
+            заблокированной.
+          </p>
+          {error && (
+            <div
+              role="alert"
+              className="mt-3 p-3 bg-[#FEF2F2] border border-[#FCA5A5] rounded-lg
+                text-sm text-[#B91C1C] flex gap-2"
+            >
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden />
+              <p>{error}</p>
+            </div>
+          )}
+          <div className="mt-4">
+            <Button
+              variant="primary"
+              size="md"
+              iconLeft={Send}
+              loading={submitting}
+              onClick={onSubmit}
+            >
+              {submitting ? 'Отправляем…' : 'На одобрение собственника'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

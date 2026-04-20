@@ -144,6 +144,38 @@ grep "version:" frontend/src/config/platform.ts
 
 > Сюда пишутся **конкретные грабли** на которые наступила эта сессия и правило, чтобы следующая на них не наступила. Формат: `## Дата — краткое имя ошибки` → что произошло → почему произошло → правило на будущее.
 
+### 2026-04-20 — Dead-end after approval, per-stage edition: «И что дальше? Ни хрена же не понятно» (v3.5.9)
+
+**Что произошло.** Артём под маркетологом Ольгой прошёл весь Стадия 2 КДМ (Камчатский дом мебели): пастил ответы собственника по challenge, генерировал и принимал legend, values, mission. Прислал скриншот, где 4/4 табов зелёные чекмарки, активная вкладка «Миссия» с 3 вариантами, CanvasCard с рамкой accepted — **и спросил:** «И что дальше? Ни хрена же не понятно. Надо сделать, чтобы было понятно.» По факту маркетолог застрял: посмотрел на последнюю accepted-карточку, дальше — никакого inline-якоря. Sticky-бар внизу с кнопкой «На одобрение собственника» существовал, но был визуально слишком слабым (полупрозрачный фон, маленький шрифт, далеко от фокуса глаз), а AcceptToast с ↓ стрелкой — transient 2.5 сек, маркетолог не успел отследить.
+
+Попутно всплыл второй баг-партнёр: `allAccepted` считался как `acceptedCount === BLOCKS.length`, где `BLOCKS.length = 4` (challenge + 3 артефакта). Но `challenge.accepted` — frontend-only useState без персистентности (по методологии: challenge — live thinking-partner, не артефакт). После любого рефреша `challenge.accepted = false` → `allAccepted = false` → **кнопка submit в StickySubmitBar `disabled`** даже когда все 3 реальных артефакта приняты. Артём этого не поймал в том сеансе (не рефрешил), но по CJM с рефрешем маркетолог застрял бы жёстко.
+
+**Корневая причина.** Класс тот же что запись 2026-04-19 «Dead-end after approval», но escalated: раньше был per-block (после accept одного блока нет «следующий шаг» → решил NextStepCard между блоками), теперь — per-stage (после accept ВСЕХ артефактов нет «отправляйте» → тот же якорь нужен уже на уровне стадии). Плюс недосмотр: `allAccepted` семантика не отделяла артефакты от thinking-partner'а. Методологический смысл стадии 2 = 3 артефакта (легенда, ценности, миссия), challenge — инструмент снятия общих фраз, выходного объекта нет, и accept на нём = «я закрыл этот tool, иду дальше» — сугубо сессионная закладка.
+
+**Что починил.**
+- `frontend/src/pages/wizard/Stage2Page.tsx`:
+  - Новая константа `PERSISTENT_BLOCKS: Block[] = ['legend', 'values', 'mission']` с комментарием «challenge — live thinking-partner без артефакта».
+  - `acceptedCount` переписан через `PERSISTENT_BLOCKS.filter(...)` вместо `BLOCKS.filter(...)`.
+  - `allAccepted` = `acceptedCount === PERSISTENT_BLOCKS.length` (3, не 4).
+  - `StickySubmitBar` `blocks` prop теперь `PERSISTENT_BLOCKS.map(...)` — 3 чипа вместо 4, counter «X/3».
+  - `AcceptToast.allAccepted` теперь читает unified `allAccepted` (раньше считал локально через `acceptedCount === BLOCKS.length` → вечно false после рефреша).
+- Новая `StageCompleteCard` (в том же файле): зелёная рамка border-[#86EFAC], bg-[#F0FDF4], иконка-кружок CheckCircle2 на bg-[#22C55E], заголовок «Все четыре блока утверждены — черновик стадии готов», пояснительный абзац (что будет дальше, кто получит уведомление, что стадия 3 заблокирована до подписи), primary Button с iconLeft={Send} и loading={submitting}. Рендерится **вне** `current.result ? (…) : (…)` ветки — per-stage объект, не привязан к текущей активной вкладке; виден даже если маркетолог сейчас стоит на challenge-табе без result'а.
+- Размещение: прямо под FeedbackForm / EmptyCanvasPlaceholder в canvas-колонке — точно там, где глаза после последнего accept.
+
+**Верификация Preview MCP (olya@chirkov-bp.ru, Белая Линия):**
+- accept values + mission через API (legend уже был accepted) → reload.
+- `preview_inspect` на `.border-2.border-\[\#86EFAC\].bg-\[\#F0FDF4\]`: `reactComponent: "StageCompleteCard"`, `reactProps: {error:"", onSubmit:[function], submitting:false}`, boundingBox x=455 y=335 w=412 h=246 — видна **над фолдом**.
+- Inline Button: bg rgb(79, 70, 229) = #4F46E5, opacity 1, enabled, text «На одобрение собственника».
+- Sticky bar: text «Легенда Ценности Миссия 3/3 На одобрение собственника», кнопка enabled (opacity 1, bg #4F46E5).
+
+**Правило.**
+(a) **Dead-end after approval применяется на КАЖДОМ уровне иерархии approval'ов.** Per-field accept → next field подсветка; per-block accept → NextStepCard на следующий блок; per-stage accept (все блоки утверждены) → StageCompleteCard с «отправляйте собственнику»; per-project accept (собственник подписал финал) → «скачайте DOCX / вернитесь к списку». Каждый уровень = отдельный CTA якорь, не «badge сменился → догадайся». Если стадия имеет N уровней утверждения, CTA-якорей тоже N.
+(b) **Per-stage completion CTA рендерится ВНЕ условной ветки текущего блока.** Если рендерить внутри `{current.result ? ... : ...}`, маркетолог может стоять на tab без result'а (например challenge без прогона) и якоря не увидеть, хотя allAccepted true. Семантика: «что дальше по СТАДИИ» ортогональна «что сейчас в активной вкладке».
+(c) **`allAccepted` (и любой accept-gate) считаем по ПЕРСИСТЕНТНЫМ артефактам, не по всем tabs.** Если на стадии есть frontend-only (thinking-partner, сессионная закладка, tool-tab без выходного артефакта) — исключаем из счётчика и gate'а. Иначе после рефреша такие tab'ы «обнуляются» и permanently disabled'ят submit. Правило расширяется на все 4 стадии: каждая имеет список PERSISTENT_BLOCKS (у Stage 1 это один interview; у Stage 3 — 4 positioning + message variants + critique + validation — надо сверить; у Stage 4 — 4 тестовые карточки).
+(d) **Визуальный вес per-stage CTA должен совпадать или превышать все промежуточные accept-кнопки.** Sticky-бар внизу экрана недостаточен: 3-px полоска с полупрозрачным фоном визуально = footer, а не next-action. Правило: если маркетолог только что выполнил действие на X, CTA на Y (следующий шаг) рендерится в той же самой визуальной области где только что был X — не «в footer'е», не «в header'е», не «на другой вкладке». Tight coupling с вниманием.
+
+---
+
 ### 2026-04-20 — Четыре бага на Стадии 2: gate-locked + верстка-overflow + Values/Mission shape-mismatch (v3.5.8)
 
 **Что произошло.** Артём (chip_admin) надел маркетологовы тапки — залогинился как `olya@chirkov-bp.ru` и прошёл CJM-сценарий Стадии 2. Нашёл 4 регресса за один заход:

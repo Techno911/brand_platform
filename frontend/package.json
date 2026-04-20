@@ -1,6 +1,6 @@
 {
   "name": "bp-frontend",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Brand Platform frontend — React 18 + Vite + Tailwind v4",
   "private": true,
   "type": "module",
