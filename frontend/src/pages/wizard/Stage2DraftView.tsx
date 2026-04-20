@@ -94,6 +94,13 @@ interface LegendData {
   warnings?: string[];
 }
 
+// Schema-drift compat для `manifestations`:
+//   А. `[{context, action}]` — как просил `values-draft.md` (expectedOutputSchema).
+//   Б. `["стрингы короткими предложениями"]` — то, что Claude реально возвращает
+//      в 9 случаях из 10 (живой прогон Холста 2026-04-20: `"manifestations":
+//      ["Увольняют за незаметный брак...", "Перешивают забытые вещи..."]`).
+// Раньше тип был строго `ValueManifestation[]`, ValueCard читал `m.context` / `m.action`
+// на строке → `undefined` → рендерил «—» для каждого пункта. Артём: «черновик пустой!».
 interface ValueManifestation {
   context?: string;
   action?: string;
@@ -101,7 +108,7 @@ interface ValueManifestation {
 interface ValueItem {
   name?: string;
   definition?: string;
-  manifestations?: ValueManifestation[];
+  manifestations?: Array<string | ValueManifestation>;
   opposite?: string;
   source_quote?: string;
 }
@@ -111,17 +118,28 @@ interface ValuesData {
   warnings?: string[];
 }
 
+// Mission: тот же schema-drift. Промпт mission-variants.md просит
+// `{text, action_verb, target, outcome, why_not_mercantile, scoring: {clarity 0-1, uniqueness 0-1, actionability 0-1}}`.
+// Claude стабильно отдаёт плоскую короткую форму `{mission, clarity 1-5,
+// uniqueness 1-5, actionability 1-5}`. Поддерживаем оба варианта, ScoreBar
+// нормализует шкалу 1-5 → 0-1 ниже.
 interface MissionVariant {
   text?: string;
+  mission?: string; // фактический ключ Claude
   action_verb?: string;
   target?: string;
   outcome?: string;
   why_not_mercantile?: string;
+  // scoring как объект (expected schema)
   scoring?: {
     clarity?: number;
     uniqueness?: number;
     actionability?: number;
   };
+  // ИЛИ плоские поля (реальность Claude)
+  clarity?: number;
+  uniqueness?: number;
+  actionability?: number;
 }
 interface MissionData {
   variants?: MissionVariant[];
@@ -446,10 +464,19 @@ function ValueCard({ value }: { value: ValueItem }) {
             {value.manifestations.map((m, i) => (
               <li key={i} className="flex items-start gap-2 text-[13px] text-[#44403C] leading-relaxed">
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#22C55E] flex-shrink-0 mt-0.5" aria-hidden />
-                <span>
-                  {isNonEmptyString(m.context) && <span className="text-[#78716C]">{m.context}: </span>}
-                  {m.action ?? '—'}
-                </span>
+                {/* Двойная ветка: строка (Claude-реальность) vs объект
+                    {context, action} (промпт-schema). На обоих вариантах
+                    маркетолог видит осмысленный пункт, не «—». */}
+                {typeof m === 'string' ? (
+                  <span>{m}</span>
+                ) : (
+                  <span>
+                    {isNonEmptyString(m.context) && (
+                      <span className="text-[#78716C]">{m.context}: </span>
+                    )}
+                    {m.action ?? '—'}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -524,7 +551,18 @@ function MissionView({ data }: { data: MissionData | string | unknown }) {
 }
 
 function MissionVariantCard({ variant, index }: { variant: MissionVariant; index: number }) {
-  const s = variant.scoring;
+  // Claude-реальность vs expected schema. Claude на практике отдаёт
+  // `{mission: "...", clarity: 5, ...}` без `text` / `scoring`. Expected schema
+  // просит `{text, scoring: {...}}`. Рендерим оба варианта без ругани в консоль.
+  const displayText = isNonEmptyString(variant.text)
+    ? variant.text
+    : isNonEmptyString(variant.mission)
+    ? variant.mission
+    : '—';
+  const clarity = variant.scoring?.clarity ?? variant.clarity;
+  const uniqueness = variant.scoring?.uniqueness ?? variant.uniqueness;
+  const actionability = variant.scoring?.actionability ?? variant.actionability;
+  const hasAnyScore = clarity !== undefined || uniqueness !== undefined || actionability !== undefined;
   return (
     <div className="bg-white border border-[#E7E5E4] rounded-xl p-4">
       <div className="flex items-start gap-3">
@@ -533,7 +571,7 @@ function MissionVariantCard({ variant, index }: { variant: MissionVariant; index
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[15px] font-medium text-[#1A1A1A] leading-relaxed">
-            {variant.text ?? '—'}
+            {displayText}
           </p>
           {(isNonEmptyString(variant.action_verb) || isNonEmptyString(variant.target) || isNonEmptyString(variant.outcome)) && (
             <div className="flex flex-wrap gap-2 mt-3">
@@ -547,11 +585,11 @@ function MissionVariantCard({ variant, index }: { variant: MissionVariant; index
               Почему не сводится к деньгам: {variant.why_not_mercantile}
             </p>
           )}
-          {s && (s.clarity !== undefined || s.uniqueness !== undefined || s.actionability !== undefined) && (
+          {hasAnyScore && (
             <div className="mt-3 pt-3 border-t border-[#F5F5F4] grid grid-cols-3 gap-3">
-              <ScoreBar label="Понятность" value={s.clarity} />
-              <ScoreBar label="Уникальность" value={s.uniqueness} />
-              <ScoreBar label="Применимость" value={s.actionability} />
+              <ScoreBar label="Понятность" value={clarity} />
+              <ScoreBar label="Уникальность" value={uniqueness} />
+              <ScoreBar label="Применимость" value={actionability} />
             </div>
           )}
         </div>
@@ -562,7 +600,13 @@ function MissionVariantCard({ variant, index }: { variant: MissionVariant; index
 
 function ScoreBar({ label, value }: { label: string; value?: number }) {
   if (value === undefined) return <div />;
-  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  // Нормализация шкалы: Claude возвращает 1-5, expectedOutputSchema — 0-1.
+  // Если value <= 1 — считаем что это уже нормированная 0-1. Иначе делим на 5.
+  // (v=0 — тоже 0-1, обработается корректно.) Артём 2026-04-20: «100% у всех,
+  // какая тут разница между вариантами?» — потому что 5/5 × 1 = 5, clamp до 1
+  // = 100% для всех. Теперь 5/5 = 1.0 → 100%, 4/5 = 0.8 → 80%, 3/5 = 0.6 → 60%.
+  const normalized = value <= 1 ? value : value / 5;
+  const pct = Math.round(Math.max(0, Math.min(1, normalized)) * 100);
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">

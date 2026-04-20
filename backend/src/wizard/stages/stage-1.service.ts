@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { AIService } from '../../ai/ai.service';
 import { WizardService } from '../wizard.service';
 import { Row, RowStatus } from '../row.entity';
+import { Project } from '../../projects/project.entity';
 
 /**
  * Stage 1: "Voice of customer" (Интервью + Отзывы + Конкуренты).
@@ -17,6 +18,8 @@ export class Stage1Service {
     private readonly wizard: WizardService,
     @InjectRepository(Row)
     private readonly rows: Repository<Row>,
+    @InjectRepository(Project)
+    private readonly projects: Repository<Project>,
   ) {}
 
   /**
@@ -44,6 +47,18 @@ export class Stage1Service {
     row.finalized = patterns;
     row.status = 'completed' as RowStatus;
     await this.rows.save(row);
+    // Инкремент project.currentStage — wizard-gate на фронте читает именно это
+    // поле (WizardShell.tsx:75 `maxAccessibleStage = Math.max(project.currentStage, stage)`).
+    // Раньше finalizeStage1 ставил row.finalized + row.status='completed', но
+    // currentStage оставался = 1 → маркетолог возвращается, кликает на pill
+    // «Стадия 2» → pill заблокирован, хотя вся работа Стадии 1 уже закрыта.
+    // Артём 2026-04-20: «почему у меня стадия 2 закрыта? Я не понимаю логику».
+    // LessThan(2) — чтобы не откатывать currentStage у проекта, который уже
+    // продвинулся дальше (например пере-утверждение Стадии 1 на Стадии 3).
+    await this.projects.update(
+      { id: projectId, currentStage: LessThan(2) },
+      { currentStage: 2 },
+    );
     return { row };
   }
 

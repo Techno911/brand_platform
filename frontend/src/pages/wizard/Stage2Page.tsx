@@ -20,7 +20,7 @@ import { Textarea } from '../../components/ui/Input';
 import Tabs from '../../components/ui/Tabs';
 import { http } from '../../api/http';
 import { useProjectRole } from '../../hooks/useProjectRole';
-import type { AIResult, Project } from '../../types/api';
+import type { AIResult, AIInvokeResult, Project, Row } from '../../types/api';
 
 type Block = 'challenge' | 'legend' | 'values' | 'mission';
 
@@ -222,6 +222,58 @@ interface BlockState {
 
 const INITIAL_STATE: BlockState = { text: '', result: null, elapsed: 0, accepted: false };
 
+// Backend response envelope. Wizard-контроллеры (legend/values/mission) оборачивают
+// AI-ответ в `{row, ai}`. Challenge (`challenge-owner-response`) отдаёт голый
+// AIInvokeResult. Нормализатор ниже приводит оба варианта к одной форме.
+type Stage2Envelope =
+  | { row: Row | null; ai: AIInvokeResult<any> }
+  | AIInvokeResult<any>;
+
+function normalizeAI(raw: Stage2Envelope): AIInvokeResult<any> {
+  return 'ai' in raw ? raw.ai : (raw as AIInvokeResult<any>);
+}
+
+// Тот же перевод reject-reason в человекочитаемое сообщение, что живёт в
+// Stage1Page.tsx. Дублируем здесь намеренно: Stage 1 и Stage 2 — разные
+// страницы с разными lifecycle'ами, копипаста дешевле вынесения в общий
+// helper (который притянет Stage 3/4 зависимость). Класс ошибок silent-
+// rejection (журнал CLAUDE.md 2026-04-19): любой endpoint возвращающий
+// AIInvokeResult ОБЯЗАН ветвить ok:false и переводить rejectReason.
+function translateRejectReason(reason: string): string {
+  if (reason === 'roundtrip_limit_hit') {
+    return 'На этой стадии уже 5 вызовов Claude за последний час — методологический лимит анти-ping-pong. Подождите до часа либо утвердите предыдущий черновик.';
+  }
+  if (reason === 'BUDGET_EXCEEDED') {
+    return 'Исчерпан AI-бюджет этого проекта. Попросите администратора увеличить budgetUsd в настройках проекта.';
+  }
+  if (reason === 'DAILY_CAP_EXCEEDED') {
+    return 'Исчерпан дневной потолок AI-затрат на всей платформе. Попробуйте завтра или свяжитесь с администратором.';
+  }
+  if (reason === 'no_vendor_available') {
+    return 'Ни один LLM-вендор не настроен. Администратору: проверьте ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENAI_COMPAT_API_KEY в backend/.env.';
+  }
+  if (reason === 'tool_not_whitelisted') {
+    return 'Claude вернул вызов несанкционированного инструмента — вызов отклонён системой безопасности. Зафиксировано в security-events.';
+  }
+  if (reason === 'PROJECT_BUSY') {
+    return 'Другой вызов Claude по этому проекту уже идёт. Подождите 5-10 секунд и повторите — параллельные вызовы запрещены методологией.';
+  }
+  if (reason.startsWith('llm_failed:')) {
+    const code = reason.slice('llm_failed:'.length);
+    if (code.includes('rate_limited')) {
+      return 'Вендор LLM сейчас перегружен (rate limit). Подождите 1-2 минуты и попробуйте ещё раз.';
+    }
+    if (code.includes('auth')) {
+      return 'Ключ доступа к LLM-вендору недействителен. Администратору: проверьте ANTHROPIC_API_KEY / OPENAI_API_KEY.';
+    }
+    if (code.includes('context_too_long')) {
+      return 'Текст слишком длинный для одного вызова. Сократите или разбейте на 2 части.';
+    }
+    return `Связаться с LLM-вендором не удалось (${code}). Попробуйте ещё раз через минуту.`;
+  }
+  return `Запрос отклонён системой: ${reason}. Если повторяется — напишите администратору со скриншотом.`;
+}
+
 export default function Stage2Page() {
   const { id } = useParams<{ id: string }>();
   const { isOwnerViewer } = useProjectRole(id);
@@ -336,14 +388,49 @@ export default function Stage2Page() {
     setLoading(true); setError('');
     const t0 = Date.now();
     try {
-      const res = await http.post<AIResult>(ENDPOINT[active], { projectId: id, text: current.text });
+      // Shape mismatch class — см. журнал CLAUDE.md 2026-04-19 (Stage 4) и 2026-04-20
+      // (этот же баг в Stage 2). Backend для legend/values/mission возвращает
+      // envelope `{row, ai: AIInvokeResult}`, для challenge — голый AIInvokeResult.
+      // Раньше фронт типизировал всё как одиночный AIResult → `res.data.status`
+      // был undefined → условная проверка `!== 'ok'` давала true → рендерился
+      // жёлтый баннер «Сработал запасной план» + FallbackText «Пусто.», хотя
+      // на самом деле Claude ответил полноценно (см. DB prompt_runs.output_json).
+      // Артём 2026-04-20: «нажал сгенерировать ценности — пусто! Ой, боже мой!».
+      const res = await http.post<Stage2Envelope>(ENDPOINT[active], {
+        projectId: id,
+        text: current.text,
+      });
+      const ai = normalizeAI(res.data);
+      if (!ai.ok) {
+        setError(translateRejectReason(ai.rejectReason ?? 'unknown'));
+        return;
+      }
+      // Конвертируем реальный AIInvokeResult в frontend-сокращённый AIResult для
+      // downstream-компонентов (CanvasCard, FeedbackForm, Stage2DraftView). status
+      // маркируем 'degraded' для degraded-вызовов — чтобы жёлтый баннер срабатывал
+      // ТОЛЬКО когда реально сработал fallback (а не на любом успешном ответе).
+      const asResult: AIResult = {
+        promptRunId: ai.runId,
+        status: ai.degraded ? 'degraded' : 'ok',
+        json: ai.json ?? undefined,
+        text: ai.text ?? undefined,
+        costUsd: ai.costUsd,
+        degraded: ai.degraded,
+      };
       updateBlock(active, {
-        result: res.data,
+        result: asResult,
         elapsed: (Date.now() - t0) / 1000,
         accepted: false, // новый черновик = снова не принят
       });
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Claude не справился — попробуйте чуть позже');
+      const msg = err?.response?.data?.message;
+      setError(
+        Array.isArray(msg)
+          ? msg.join(' · ')
+          : typeof msg === 'string' && msg
+          ? msg
+          : 'Claude не справился — попробуйте чуть позже',
+      );
     } finally {
       setLoading(false);
     }
@@ -559,10 +646,30 @@ export default function Stage2Page() {
         <div>
           <Card>
             <Card.Header>
-              <div className="flex items-start gap-2">
-                <MessagesSquare className="w-4 h-4 text-[#4F46E5] mt-0.5" aria-hidden />
-                <div>
-                  <Card.Title>{LABELS[active].title}</Card.Title>
+              {/* min-w-0 flex-1 на текстовом контейнере — КЛЮЧ от overflow.
+                  flex-child по умолчанию имеет min-width: auto (= естественная
+                  ширина содержимого), он не даёт тексту переноситься. min-w-0
+                  снимает этот барьер, flex-1 занимает оставшееся место после
+                  иконки. Плюс Card.Title дефолтно whitespace-nowrap (ellipsis)
+                  — переопределяем на whitespace-normal, чтобы длинный заголовок
+                  «Ценности (3-5 штук, каждая — конкретное поведение)» переносился
+                  внутри карточки, а не вылезал. Артём 2026-04-20: «текст вылезает
+                  из карточки, ты чего?» */}
+              <div className="flex items-start gap-2 min-w-0 w-full">
+                <MessagesSquare
+                  className="w-4 h-4 text-[#4F46E5] mt-0.5 flex-shrink-0"
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  {/* !-prefix обязателен: CardTitle по-дефолту имеет
+                      whitespace-nowrap + overflow-hidden + text-ellipsis
+                      для коротких заголовков. Для длинного текста Стадии 2
+                      эти три utility сталкиваются с нашими whitespace-normal
+                      / overflow-visible — без важности порядок в JIT-CSS
+                      недетерминирован, на практике всё равно обрезало. */}
+                  <Card.Title className="!whitespace-normal !overflow-visible">
+                    {LABELS[active].title}
+                  </Card.Title>
                   <Card.Description>{LABELS[active].hint}</Card.Description>
                 </div>
               </div>
