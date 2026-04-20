@@ -69,6 +69,38 @@ export class Stage1Service {
     return { row: null, ai: r };
   }
 
+  /**
+   * Восстановление состояния Стадии 1 при возврате маркетолога на вкладку.
+   *
+   * Маркетолог работает параллельно на 4 стадиях: пошёл на Stage 2, потом
+   * кликнул назад Stage 1 — должен увидеть сохранённые слоты и распарсенные
+   * паттерны, а не «начать сначала» (Артём 2026-04-20: «Это капец! Как ты
+   * такое допустил?»).
+   *
+   * Бэкенд уже сохраняет состояние в `rows`:
+   *  - `runInterviewPatterns()` → createRow(sheet=1, type='interview',
+   *    payload={raw, patterns}). Значит transcript и patterns живут в БД
+   *    с момента первого успешного вызова.
+   *  - `finalizeStage1()` → row.finalized = patterns, status='completed'.
+   *
+   * Этот метод читает последнюю interview-row и возвращает всё, что нужно
+   * фронту для перерисовки: transcript (для разбиения на слоты), patterns
+   * (для рендера черновика), isFinalized (для UI-блока «перейти к Стадии 2»).
+   */
+  async getState(projectId: string) {
+    const row = await this.rows.findOne({
+      where: { projectId, sheet: 1, type: 'interview' },
+      order: { createdAt: 'DESC' },
+    });
+    if (!row) return { transcript: '', patterns: null, isFinalized: false };
+    const payload = (row.payload ?? {}) as { raw?: string; patterns?: unknown };
+    return {
+      transcript: typeof payload.raw === 'string' ? payload.raw : '',
+      patterns: row.finalized ?? payload.patterns ?? null,
+      isFinalized: row.status === 'completed' && !!row.finalized,
+    };
+  }
+
   /** /plan-mode-15q to deepen missing fields — Tverdoholobov. */
   async askClarifications(projectId: string, userId: string, currentState: Record<string, any>) {
     return this.ai.invoke({

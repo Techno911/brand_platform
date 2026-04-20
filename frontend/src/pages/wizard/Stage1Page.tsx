@@ -145,6 +145,83 @@ export default function Stage1Page() {
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Восстановление стейта при возврате маркетолога на страницу. Бэкенд хранит
+  // transcript и patterns в `rows` (sheet=1, type='interview'); без этой подгрузки
+  // маркетолог уходит на Stage 2, возвращается по ссылке «взять из Стадии 1» —
+  // и видит пустую форму. Артём 2026-04-20: «Это капец! Как ты такое допустил?».
+  //
+  // Транскрипт бьётся обратно по тому же маркеру, что при отправке:
+  // `### ИНТЕРВЬЮ N\n<text>\n\n### ИНТЕРВЬЮ N+1\n<text>…`.
+  // Если частей <3 (маркетолог сохранил только 1 пункт в прошлой сессии) —
+  // дополним пустыми слотами до минимального 3.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    http
+      .get<{ transcript: string; patterns: InterviewPatterns | null; isFinalized: boolean }>(
+        `/wizard/stage-1/state?projectId=${id}`,
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const { transcript, patterns } = res.data;
+        if (transcript && transcript.trim().length > 0) {
+          // Разбор: split по маркеру `### ИНТЕРВЬЮ N`, отбрасываем заголовки/пустые.
+          const parts = transcript
+            .split(/\n*### ИНТЕРВЬЮ \d+\n/u)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (parts.length) {
+            const restored = parts.slice(0, MAX_INTERVIEWS).map((text) => ({
+              id:
+                typeof crypto !== 'undefined' && crypto.randomUUID
+                  ? crypto.randomUUID()
+                  : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              text,
+            }));
+            // Дополняем до минимума 3 пустыми слотами, если сохранено меньше.
+            while (restored.length < MIN_INTERVIEWS) restored.push(makeSlot());
+            setSlots(restored);
+          }
+        }
+        if (patterns && typeof patterns === 'object') {
+          // Синтезируем Stage1InterviewPatternsResponse — фронту нужно `ai.ok=true`
+          // и `ai.json=patterns` чтобы Stage1DraftView отрендерил блок. Поля cost/latency
+          // не знаем (это ведь прошлый run) — ставим заглушки; TimeSavedChip в cached-режиме
+          // для restored-стейта неприменим, поэтому не вызываем его в этой ветке.
+          setResult({
+            row: null,
+            ai: {
+              ok: true,
+              kind: 'interview_patterns',
+              runId: 'restored',
+              text: null,
+              json: patterns,
+              stopReason: null,
+              usage: {
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheReadInputTokens: 0,
+                cacheCreationInputTokens: 0,
+              },
+              costUsd: 0,
+              costAdjustedUsd: 0,
+              costRawUsd: 0,
+              latencyMs: 0,
+              retries: 0,
+              cached: true,
+              degraded: false,
+            },
+          });
+        }
+      })
+      .catch(() => {
+        // Тихий фэйл: даже если state endpoint даёт 403/404, пустая форма не ломает UI
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
   // Отдельное состояние для финализации — не переиспользуем `loading`/`error`,
   // потому что маркетолог может «Извлечь паттерны» повторно уже после первого
   // черновика, и тот флоу не должен скрывать ошибку перехода на Стадию 2.

@@ -1,6 +1,6 @@
 {
   "name": "bp-backend",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Brand Platform backend — NestJS 10 API, AI layer, wizard orchestrator",
   "private": true,
   "scripts": {

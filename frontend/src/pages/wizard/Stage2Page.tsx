@@ -242,12 +242,64 @@ export default function Stage2Page() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Тост «Блок X утверждён → переходим к Y». Без визуальной подтверждалки
+  // accept ощущался как ничего-не-делание: badge на CanvasCard менялся тихо,
+  // tab сбоку подсвечивался мелко, маркетолог не считывал событие.
+  // Артём 2026-04-20: «нажал принять, ничего не произошло».
+  const [acceptToast, setAcceptToast] = useState<{ from: Block; to: Block | null } | null>(null);
   // submittedAt — timestamp успешного запроса на одобрение. Когда установлен,
   // sticky-бар «На одобрение собственника» меняется на зелёный баннер «отправлено, ждём».
   // In-memory state: если маркетолог перезагрузит страницу, факт сабмита сейчас теряется;
   // бэк пишет audit_event, восстановление будет добавлено вместе с Telegram-дайджестом
   // (раздел Post-MVP). Для текущей задачи (чтобы маркетолог видел результат клика) достаточно.
   const [submittedAt, setSubmittedAt] = useState<Date | null>(null);
+
+  // Восстановление стейта 3 блоков (legend/values/mission) при возврате маркетолога.
+  // Challenge — live thinking partner, не персистится (его ввод — ответы собственника
+  // в режиме рилтайма, сохранять их как row нет смысла: они попадают внутрь Stage 1/2
+  // обоих контекстов). Без этой подгрузки маркетолог видит пустую Stage 2, при этом
+  // Claude уже генерировал на бэке — Артём 2026-04-20: «нажал принять, ничего не произошло».
+  type BlockSnapshot = { text: string; draft: unknown; accepted: boolean };
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    http
+      .get<{ legend: BlockSnapshot; values: BlockSnapshot; mission: BlockSnapshot }>(
+        `/wizard/stage-2/state?projectId=${id}`,
+      )
+      .then((res) => {
+        if (cancelled) return;
+        const { legend, values, mission } = res.data;
+        const toBlockState = (s: BlockSnapshot): BlockState => {
+          if (!s.draft && !s.text) return { ...INITIAL_STATE };
+          return {
+            text: s.text ?? '',
+            result: s.draft
+              ? ({
+                  promptRunId: 'restored',
+                  status: 'ok',
+                  json: s.draft,
+                  text: typeof s.draft === 'string' ? s.draft : undefined,
+                } as AIResult)
+              : null,
+            elapsed: 0,
+            accepted: !!s.accepted,
+          };
+        };
+        setBlocks({
+          challenge: { ...INITIAL_STATE },
+          legend: toBlockState(legend),
+          values: toBlockState(values),
+          mission: toBlockState(mission),
+        });
+      })
+      .catch(() => {
+        /* тихий фэйл: пустая форма лучше сломанной страницы */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const current = blocks[active];
 
@@ -282,19 +334,43 @@ export default function Stage2Page() {
   // «зачем лишний экран утверждено следующий шаг легенда? Почему нельзя сразу перейти?».
   // Теперь: один клик «Принять черновик» → накат галочки на вкладку + скачок вперёд.
   // Если все 4 блока утверждены — остаёмся на текущем (sticky-бар внизу активируется).
-  const accept = () => {
-    // Стейт-мутация в setBlocks — асинхронная; поэтому считаем следующий блок СРАЗУ,
-    // взяв текущий blocks-snapshot + флаг утверждения active. Нельзя опираться на
-    // nextUnacceptedBlock (useMemo), он пересчитается только после ре-рендера.
+  //
+  // Accept теперь персистит на бэкенде: раньше `accepted` жил только в useState и
+  // терялся при любой навигации. Артём (2026-04-20): «нажал принять, ничего не
+  // произошло». Теперь: POST /stage-2/accept-block → row.status=completed +
+  // row.finalized=draft, возврат на страницу отрабатывает getState() и видит чекмарк.
+  // Плюс: acceptToast — явная подтверждалка «Блок X → переходим к Y» на 2.5 сек.
+  const accept = async () => {
+    // Challenge — live thinking partner без персистенции; accept на нём не имеет
+    // методологического смысла (собственник ещё не дал финальный ответ).
+    // Но UI-путь всё равно совместим: прокрутим на legend без бэкенд-вызова.
+    if (!id) return;
     const nextIdx = BLOCKS.indexOf(active);
     let nextBlock: Block | null = null;
     for (let step = 1; step <= BLOCKS.length; step++) {
       const cand = BLOCKS[(nextIdx + step) % BLOCKS.length];
       if (cand === active) continue;
-      // В этом snapshot-е active уже «accepted», остальные — как в state.
       if (!blocks[cand].accepted) { nextBlock = cand; break; }
     }
+
+    if (active !== 'challenge') {
+      try {
+        await http.post('/wizard/stage-2/accept-block', { projectId: id, block: active });
+      } catch (err: any) {
+        setError(
+          err?.response?.data?.message ||
+            'Не удалось сохранить утверждение. Повторите через пару секунд.',
+        );
+        return;
+      }
+    }
+
     updateBlock(active, { accepted: true });
+    setAcceptToast({ from: active, to: nextBlock });
+    // Тост держится 2.5 сек — достаточно прочесть формулировку и начать работать
+    // на новой вкладке. Если маркетолог сам переключил таб раньше — тост всё равно
+    // уйдёт по таймеру, это ок.
+    setTimeout(() => setAcceptToast(null), 2500);
     if (nextBlock) {
       setActive(nextBlock);
       // rAF: дать React перерисовать панель, потом прокрутить вверх.
@@ -307,9 +383,18 @@ export default function Stage2Page() {
   // Откат утверждения: маркетолог вернулся на уже принятую вкладку (галочка зелёная),
   // хочет внести правку — FeedbackForm в accepted=true режиме показывает кнопку
   // «Вернуть на правки». Клик вызывает reopen, accepted снова false, три поля снова
-  // доступны. Ошибки не должно быть: никаких сетевых запросов не посылается, только
-  // локальный стейт. (Собственнику всё ещё не отправлено — до «На одобрение собственника».)
-  const reopen = () => updateBlock(active, { accepted: false });
+  // доступны. Бэкенд тоже откатывает row.status='planned', finalized=null —
+  // чтобы при следующем заходе маркетолог видел консистентный стейт.
+  const reopen = async () => {
+    if (!id) return;
+    updateBlock(active, { accepted: false });
+    if (active === 'challenge') return;
+    try {
+      await http.post('/wizard/stage-2/reopen-block', { projectId: id, block: active });
+    } catch {
+      /* тихий фэйл: UI уже перерисован в правку-режим, БД догонит на следующем accept */
+    }
+  };
 
   const submitFeedback = async (payload: { rejected: string; reason: string; reformulate: string }) => {
     if (!id) return;
@@ -566,6 +651,18 @@ export default function Stage2Page() {
         </aside>
       </div>
 
+      {/* Тост «Блок X утверждён → переходим к Y» — показывается на 2.5 сек после accept.
+          Без явной подтверждалки accept считывался как ничего-не-произошло: badge на
+          CanvasCard менялся тихо, tab подсвечивался мелкой галочкой — маркетолог шёл
+          прочь от экрана. Тост — видимое событие посередине экрана. */}
+      {acceptToast && (
+        <AcceptToast
+          from={LABELS[acceptToast.from].short}
+          to={acceptToast.to ? LABELS[acceptToast.to].short : null}
+          allAccepted={acceptedCount === BLOCKS.length}
+        />
+      )}
+
       {/* Sticky CTA: «Отправить собственнику» — заменяется на зелёный баннер
           «Отправлено, ждём подписи собственника», когда маркетолог нажал кнопку.
           Без этого действие уходило молча (audit-лог пишется, но UI никак не
@@ -760,6 +857,51 @@ function StickySubmittedBar({
             Открыть «Утверждения»
             <ArrowRight className="w-4 h-4" aria-hidden />
           </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ———————————————————————————————————————————————————————————————
+// AcceptToast — всплывающее сообщение «Блок X утверждён → переходим к Y».
+// Центр экрана, белая плашка с зелёной каёмкой, исчезает через 2.5 сек.
+// Задача: превратить silent tab-switch после accept в видимое событие.
+// Без тоста Артём (2026-04-20) читал accept как «ничего не произошло».
+// ———————————————————————————————————————————————————————————————
+
+function AcceptToast({
+  from,
+  to,
+  allAccepted,
+}: {
+  from: string;
+  to: string | null;
+  allAccepted: boolean;
+}) {
+  return (
+    <div
+      className="fixed top-20 left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className="flex items-center gap-3 px-5 py-3 rounded-2xl border border-[#86EFAC]
+          bg-white shadow-lg"
+      >
+        <CheckCircle2 className="w-5 h-5 text-[#15803D] flex-shrink-0" aria-hidden />
+        <div className="text-sm">
+          <span className="font-semibold text-[#14532D]">
+            «{from}» утверждено маркетологом
+          </span>
+          {to && !allAccepted ? (
+            <span className="text-[#166534]"> → переходим к «{to}»</span>
+          ) : allAccepted ? (
+            <span className="text-[#166534]">
+              {' '}
+              — все 4 блока готовы. Отправьте на одобрение собственника ↓
+            </span>
+          ) : null}
         </div>
       </div>
     </div>

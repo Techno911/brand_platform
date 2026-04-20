@@ -29,6 +29,11 @@ class Stage1FinalizeDto {
   @IsUUID() projectId!: string;
 }
 
+class Stage2AcceptDto {
+  @IsUUID() projectId!: string;
+  @IsIn(['legend', 'values', 'mission']) block!: 'legend' | 'values' | 'mission';
+}
+
 class OwnerTextDto {
   @IsUUID() projectId!: string;
   @IsString() text!: string;
@@ -122,6 +127,17 @@ export class WizardController {
     return this.stage1.finalizeStage1(dto.projectId);
   }
 
+  /**
+   * Восстановление стейта Стадии 1 при возврате маркетолога на страницу.
+   * Без этого transcript и patterns терялись в памяти при любой навигации —
+   * маркетолог видел пустую стадию 1 и думал «всё пропало, начинать заново».
+   */
+  @Roles('chip_admin', 'tracker', 'marketer', 'owner_viewer')
+  @Get('stage-1/state')
+  stage1State(@Query('projectId') projectId: string) {
+    return this.stage1.getState(projectId);
+  }
+
   // ----- Stage 2 -----
   @Roles('chip_admin', 'tracker', 'marketer')
   @Post('stage-2/challenge-owner')
@@ -145,6 +161,31 @@ export class WizardController {
   @Post('stage-2/mission-variants')
   stage2Mission(@Body() dto: OwnerTextDto, @CurrentUser() u: AuthenticatedUser) {
     return this.stage2.missionVariants(dto.projectId, u.id, dto.text);
+  }
+
+  /**
+   * Маркетолог утвердил блок (legend/values/mission) — ставим row.status=completed +
+   * finalized=draft на бэкенде. Раньше accept'нутость жила только в useState фронта
+   * и терялась при перезагрузке — Артём 2026-04-20: «нажал принять, ничего не произошло».
+   */
+  @Roles('chip_admin', 'tracker', 'marketer')
+  @Post('stage-2/accept-block')
+  stage2AcceptBlock(@Body() dto: Stage2AcceptDto) {
+    return this.stage2.acceptBlock(dto.projectId, dto.block);
+  }
+
+  /** Откат утверждения — маркетолог решил вернуться и внести правки. */
+  @Roles('chip_admin', 'tracker', 'marketer')
+  @Post('stage-2/reopen-block')
+  stage2ReopenBlock(@Body() dto: Stage2AcceptDto) {
+    return this.stage2.reopenBlock(dto.projectId, dto.block);
+  }
+
+  /** Восстановление стейта 3 блоков (legend/values/mission) на возврат. */
+  @Roles('chip_admin', 'tracker', 'marketer', 'owner_viewer')
+  @Get('stage-2/state')
+  stage2State(@Query('projectId') projectId: string) {
+    return this.stage2.getState(projectId);
   }
 
   // ----- Stage 3 -----
