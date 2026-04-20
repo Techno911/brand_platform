@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bp-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--host", "127.0.0.1"],
+      "cwd": "${workspaceFolder}/frontend",
+      "port": 5174,
+      "autoPort": true
+    }
+  ]
+}

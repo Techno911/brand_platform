@@ -1,0 +1,25 @@
+# Development overrides — docker compose -f docker-compose.yml -f docker-compose.dev.yml -p bp up
+# Поднимает только postgres + minio + docx-exporter для локальной разработки backend/frontend на хосте.
+version: "3.9"
+
+services:
+  bp-postgres:
+    # 5433 на хосте — 5432 занят другим проектом chip-postgres-1.
+    ports:
+      - "5433:5432"
+
+  bp-minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  bp-docx-exporter:
+    ports:
+      - "4000:4000"
+
+  bp-backend:
+    profiles: ["full"]
+  bp-frontend:
+    profiles: ["full"]
+  bp-ingress-nginx:
+    profiles: ["full"]

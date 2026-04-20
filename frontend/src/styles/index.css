@@ -1,0 +1,348 @@
+/* ─────────────────────────────────────────────────────────────
+ * BP Design System — tokens & globals
+ * Единый источник правды: DESIGN.md
+ * При конфликте с Tailwind utility — this file wins (через CSS vars).
+ * ───────────────────────────────────────────────────────────── */
+
+/* Inter — body / UI */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* IBM Plex Mono — display, numbers, brand tone. Локальные TTF из брендбука. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-Light.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-SemiBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/IBMPlexMono-Bold.ttf') format('truetype');
+}
+
+@import "tailwindcss";
+
+:root {
+  /* ─── Brand base (из брендбука Артём & Партнёры) ─── */
+  --brand-white:           #FEFEFE;
+  --brand-ink:             #2B2A29;
+
+  /* ─── Primary (indigo — premium-SaaS стандарт à la Linear / Stripe,
+         выбран из research §1.4–1.5 после отказа пользователя от оранжевого) ─── */
+  --primary-50:            #EEF2FF;
+  --primary-100:           #E0E7FF;
+  --primary-200:           #C7D2FE;
+  --primary-300:           #A5B4FC;
+  --primary-400:           #818CF8;
+  --primary-500:           #4F46E5;
+  --primary-600:           #4338CA;
+  --primary-700:           #3730A3;
+  --primary-800:           #312E81;
+  --primary-900:           #1E1B4B;
+
+  /* ─── Neutral (warm gray scale — базовые фоны/тексты/разделители) ─── */
+  --neutral-0:             #FFFFFF;
+  --neutral-50:            #FAFAF9;
+  --neutral-100:           #F5F5F4;
+  --neutral-200:           #E7E5E4;
+  --neutral-300:           #D6D3D1;
+  --neutral-400:           #A8A29E;
+  --neutral-500:           #78716C;
+  --neutral-600:           #57534E;
+  --neutral-700:           #44403C;
+  --neutral-800:           #292524;
+  --neutral-900:           #1A1A1A;
+
+  /* ─── Semantic ─── */
+  --success-50:            #F0FDF4;
+  --success-500:           #22C55E;
+  --success-600:           #16A34A;
+  --success-700:           #15803D;   /* deep text on success-50 soft badge */
+  --warning-50:            #FEFCE8;
+  --warning-500:           #EAB308;
+  --warning-600:           #CA8A04;
+  --warning-700:           #A16207;   /* deep text on warning-50 soft badge */
+  --danger-50:             #FEF2F2;
+  --danger-500:            #EF4444;
+  --danger-600:            #DC2626;
+  --danger-700:            #B91C1C;   /* deep text on danger-50 soft badge */
+  --info-50:               #EFF6FF;   /* только для admin observability */
+  --info-500:              #3B82F6;   /* только для admin observability */
+  --info-700:              #1D4ED8;   /* deep text on info-50 soft badge */
+
+  /* ─── Semantic tokens (use these in apps — не hex, не primary-500) ─── */
+  --fg1:                   var(--neutral-900);  /* primary text */
+  --fg2:                   var(--neutral-700);  /* body-mid */
+  --fg3:                   var(--neutral-500);  /* secondary / meta */
+  --fg4:                   var(--neutral-400);  /* muted / placeholder */
+  --fg-on-dark:            #FFFFFF;
+  --fg-on-dark-muted:      #9CA3AF;
+  --bg-app:                var(--neutral-50);
+  --bg-card:               var(--neutral-0);
+  --bg-subtle:             var(--neutral-100);
+  --bg-sidebar:            var(--neutral-900);   /* #1A1A1A — hard-constraint */
+  --bg-sidebar-hover:      #2A2A2A;
+  --border-default:        var(--neutral-200);
+  --border-strong:         var(--neutral-300);
+  --border-focus:          var(--primary-500);
+
+  /* ─── Legacy aliases (обратная совместимость с существующим кодом) ─── */
+  --color-dark:            var(--neutral-900);
+  --color-dark-hover:      var(--neutral-800);
+  --color-dark-active:     #333333;
+  --color-surface:         var(--neutral-50);
+  --color-white:           var(--neutral-0);
+  --color-primary:         var(--primary-500);
+  --color-primary-hover:   var(--primary-600);
+  --color-primary-light:   var(--primary-50);
+  --color-primary-border:  var(--primary-300);
+  --color-success:         var(--success-500);
+  --color-success-light:   var(--success-50);
+  --color-warning:         var(--warning-500);
+  --color-warning-light:   var(--warning-50);
+  --color-danger:          var(--danger-500);
+  --color-danger-light:    var(--danger-50);
+  --color-text-primary:    var(--neutral-900);
+  --color-text-secondary:  #6B7280;
+  --color-text-muted:      #9CA3AF;
+  --color-text-on-dark:    #FFFFFF;
+  --color-text-on-dark-muted: #9CA3AF;
+  --color-border:          #E5E7EB;
+  --color-border-focus:    var(--primary-500);
+  --color-input-bg:        #F3F4F6;
+
+  /* ─── Radius scale ─── */
+  --radius-sm:             4px;
+  --radius-md:             8px;
+  --radius-lg:             12px;   /* ← все buttons */
+  --radius-xl:             16px;
+  --radius-2xl:            20px;   /* ← все cards */
+  --radius-full:           9999px;
+
+  /* ─── Shadow scale ─── */
+  --shadow-none:           none;
+  --shadow-soft-1:         0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-soft-2:         0 4px 12px 0 rgba(0, 0, 0, 0.06);
+  --shadow-overlay:        0 12px 40px 0 rgba(0, 0, 0, 0.15);
+  --shadow-focus:          0 0 0 3px rgba(79, 70, 229, 0.25);
+
+  /* ─── Typography ─── */
+  --font-sans:             'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:             'IBM Plex Mono', 'JetBrains Mono', 'Consolas', monospace;
+
+  /* ─── Motion ─── */
+  --ease-out:              cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:           cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-instant:           100ms;
+  --dur-fast:              150ms;
+  --dur-base:              200ms;
+  --dur-slow:              300ms;
+  --dur-pensive:           500ms;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Josh W. Comeau — Modern CSS Reset (research #13)
+ * https://www.joshwcomeau.com/css/custom-css-reset/
+ * Даёт сразу +10% premium feeling — корректные line-height,
+ * inheritance типографики, оптимизированный text rendering.
+ *
+ * ВАЖНО: завёрнуто в @layer base, иначе unlayered color: inherit
+ * на button/input побеждает Tailwind utilities (text-white и т.д.)
+ * — это CSS cascade, unlayered > @layer utilities.
+ * ───────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; }
+
+  html, body, #root { height: 100%; }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;                        /* proportional per Refactoring UI #2 */
+    color: var(--neutral-900);
+    background: var(--neutral-50);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv11', 'ss01';   /* Inter alt-glyphs для кириллицы */
+  }
+
+  /* media defaults — responsive by default */
+  img, picture, video, canvas, svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* form elements — inherit typography (font:inherit нужно; color:inherit
+     НАМЕРЕННО убран, чтобы Tailwind text-* работали на button/input) */
+  input, button, textarea, select {
+    font: inherit;
+  }
+
+  /* long words don't overflow */
+  p, h1, h2, h3, h4, h5, h6 {
+    overflow-wrap: break-word;
+  }
+
+  /* headings — более плотный line-height для display (see #2) */
+  h1, h2, h3, h4, h5, h6 { line-height: 1.2; text-wrap: balance; }
+}
+
+/* ─── Typography scale (из Refactoring UI + Geist) ─── */
+:root {
+  --text-display:    2.25rem;   /* 36px — hero на login */
+  --text-h1:         1.875rem;  /* 30px — top-level page heading */
+  --text-h2:         1.5rem;    /* 24px — section heading */
+  --text-h3:         1.125rem;  /* 18px — card heading */
+  --text-body-lg:    1rem;      /* 16px — читаемый body */
+  --text-body:       0.875rem;  /* 14px — default UI */
+  --text-caption:    0.75rem;   /* 12px — hint / meta */
+  --text-mono-sm:    0.8125rem; /* 13px — ID/code chips */
+  --text-micro:      0.625rem;  /* 10px — uppercase mono labels */
+
+  --lh-tight:        1.2;
+  --lh-snug:         1.35;
+  --lh-normal:       1.5;
+  --lh-relaxed:      1.7;
+
+  /* ─── Spacing — 4pt grid (canonical values) ─── */
+  --space-1:         4px;
+  --space-2:         8px;
+  --space-3:         12px;
+  --space-4:         16px;
+  --space-5:         20px;
+  --space-6:         24px;
+  --space-8:         32px;
+  --space-10:        40px;
+  --space-12:        48px;
+  --space-16:        64px;
+}
+
+/* ─── Helper utilities ─── */
+.font-mono {
+  font-family: var(--font-mono);
+  font-feature-settings: 'zero', 'ss01';  /* Plex Mono — slashed zero + tabular */
+}
+
+.font-display {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Uppercase-mono micro-label — «СТАДИЯ 2», «ВАШЕ СЛЕДУЮЩЕЕ ДЕЙСТВИЕ»
+   Единственное место в UI, где legal capslock. 10px, letter-spacing 0.08em. */
+.uppercase-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg3);
+}
+
+/* ─── Focus ring — indigo для всех interactive-элементов ─── */
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-md);
+}
+
+/* ─── Scrollbar (нейтральный) ─── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-300);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--neutral-50);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--neutral-400); }
+
+/* ─── Animations ─── */
+
+/* SufflerPanel slide-in (legacy, уже используется) */
+@keyframes suffler-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.suffler-enter { animation: suffler-in var(--dur-base) var(--ease-out); }
+
+/* Page fade-in on mount */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fade-in-up var(--dur-slow) var(--ease-out) both; }
+.fade-in-delayed { animation: fade-in-up var(--dur-slow) var(--ease-out) 100ms both; }
+
+/* Modal enter */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.modal-enter { animation: modal-in var(--dur-base) var(--ease-out); }
+
+/* Stepper circle fill */
+@keyframes stepper-fill {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.stepper-fill { animation: stepper-fill var(--dur-base) var(--ease-out); }
+
+/* Button loading spinner (единственное место со spinner-анимацией) */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 700ms linear infinite; }
+
+/* Suggestion-mark pulse (Approvals page) */
+@keyframes suggestion-pulse {
+  0%, 100% { background-color: rgba(234, 179, 8, 0.08); }
+  50%      { background-color: rgba(234, 179, 8, 0.18); }
+}
+.suggestion-pulse { animation: suggestion-pulse 2s var(--ease-in-out) infinite; }
+
+/* Logo white-on-dark helper (применяется к logo-full-dark.png в dark-sidebar) */
+.logo-invert {
+  filter: invert(1) brightness(1.15);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * Accessibility — prefers-reduced-motion
+ * Vercel Web Interface Guidelines (research #21):
+ * honor prefers-reduced-motion всегда. Анимации — усиление,
+ * но не must-have для понимания интерфейса.
+ * ───────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Brand Platform — UI kit</title>
+<link rel="icon" href="../../assets/favicon.png" />
+<link rel="stylesheet" href="kit.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  .demo-switcher { position: fixed; top: 16px; right: 16px; background: #1A1A1A; color: #fff; border-radius: 12px; padding: 6px; display: flex; gap: 4px; z-index: 100; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
+  .demo-switcher button { border: 0; background: transparent; color: #9CA3AF; padding: 6px 12px; border-radius: 8px; font: 500 12px/1 'Inter', sans-serif; cursor: pointer; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+  .demo-switcher button.on { background: #4F46E5; color: #fff; }
+  .demo-switcher button:hover:not(.on) { color: #fff; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react" src="Icon.jsx"></script>
+<script type="text/babel" data-presets="react" src="Shell.jsx"></script>
+<script type="text/babel" data-presets="react" src="Dashboard.jsx"></script>
+<script type="text/babel" data-presets="react" src="Wizard.jsx"></script>
+<script type="text/babel" data-presets="react" src="Approvals.jsx"></script>
+<script type="text/babel" data-presets="react" src="Projects.jsx"></script>
+<script type="text/babel" data-presets="react" src="Admin.jsx"></script>
+<script type="text/babel" data-presets="react" src="Login.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+function App() {
+  const saved = (typeof localStorage !== 'undefined' && localStorage.getItem('bp-screen')) || 'dashboard';
+  const [screen, setScreen] = React.useState(saved);
+  React.useEffect(() => { try { localStorage.setItem('bp-screen', screen); } catch {} }, [screen]);
+
+  const { Shell, DashboardScreen, WizardScreen, ApprovalsScreen, ProjectsScreen, AdminScreen, LoginScreen } = window;
+
+  const screens = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'wizard', label: 'Wizard S2' },
+    { id: 'approvals', label: 'Approvals' },
+    { id: 'admin', label: 'Admin' },
+    { id: 'login', label: 'Login' },
+  ];
+
+  const Switcher = () => (
+    <div className="demo-switcher">
+      {screens.map(s => (
+        <button key={s.id} className={screen === s.id ? 'on' : ''} onClick={() => setScreen(s.id)}>{s.label}</button>
+      ))}
+    </div>
+  );
+
+  if (screen === 'login') return (<><LoginScreen /><Switcher /></>);
+
+  let content, title, bread, role = 'chip_manager', active = '/dashboard';
+  if (screen === 'dashboard') { content = <DashboardScreen />; title = 'Главная'; }
+  else if (screen === 'projects') { content = <ProjectsScreen />; title = 'Проекты'; active = '/projects'; }
+  else if (screen === 'wizard') { content = <WizardScreen />; title = 'Белая Линия'; bread = ['Проекты', 'Белая Линия', 'Стадия 2']; active = '/projects'; }
+  else if (screen === 'approvals') { content = <ApprovalsScreen />; title = 'Утверждения'; bread = ['Проекты', 'Белая Линия', 'Утверждения']; active = '/approvals'; }
+  else if (screen === 'admin') { content = <AdminScreen />; title = 'Silent failures'; role = 'chip_admin'; active = '/admin/silent-failures'; }
+
+  return (<><Shell role={role} active={active} title={title} breadcrumbs={bread}>{content}</Shell><Switcher /></>);
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

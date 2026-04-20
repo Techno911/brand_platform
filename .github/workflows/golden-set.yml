@@ -1,0 +1,51 @@
+# Golden-set регрессия (INSIGHTS §4: Walk-Forward, порог 15%).
+# 1) nightly 03:00 MSK — прогон на production промптах для раннего детекта деградации
+# 2) PR с изменениями prompts/** или knowledge/** — блокирует merge при регрессии
+name: golden-set
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/src/prompts/**"
+      - "backend/src/knowledge/**"
+      - "backend/src/golden-set/**"
+  pull_request:
+    paths:
+      - "backend/src/prompts/**"
+      - "backend/src/knowledge/**"
+      - "backend/src/golden-set/**"
+  schedule:
+    # 03:00 MSK = 00:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  regression:
+    name: golden-set · walk-forward regression
+    runs-on: ubuntu-latest
+    # Требует реального Anthropic-ключа; запускается только при наличии секрета.
+    # Для форков пропускаем (не тратим квоту).
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    env:
+      NODE_ENV: test
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GOLDEN_SET_THRESHOLD: "15"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - name: Run golden-set regression
+        run: npx ts-node scripts/run-golden-set.ts
+        working-directory: backend
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-set-report
+          path: backend/artifacts/golden-set/**

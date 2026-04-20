@@ -1,0 +1,65 @@
+
+# --- Node ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+*.env
+credentials.json
+secrets/
+
+# --- TLS/mTLS certs (генерируются локально, never in git) ---
+infra/nginx/certs/*.pem
+infra/nginx/certs/*.key
+infra/nginx/certs/*.crt
+infra/exporter/certs/*.pem
+infra/exporter/certs/*.key
+infra/exporter/certs/*.crt
+infra/exporter/certs/*.csr
+infra/exporter/certs/*.srl
+infra/exporter/certs/*.ext
+!infra/nginx/certs/.gitkeep
+!infra/nginx/certs/generate-dev-certs.sh
+!infra/exporter/certs/generate-dev-certs.sh
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- IDE ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# --- Test output ---
+coverage/
+playwright-report/
+test-results/
+
+# --- Golden-set results (not fixtures) ---
+backend/test/golden-set/**/results/
+backend/artifacts/
+
+# --- Playwright e2e ---
+e2e/node_modules/
+e2e/playwright-report/
+e2e/test-results/
+
+# --- Semgrep / CI artifacts ---
+semgrep.sarif
+zap-baseline-report/
+
+# --- Personal Claude notes (per-machine dev-ops, not team) ---
+CLAUDE.local.md
+.claude/settings.local.json

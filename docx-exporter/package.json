@@ -1,0 +1,21 @@
+{
+  "name": "bp-docx-exporter",
+  "version": "0.1.0",
+  "description": "Isolated DOCX rendering service for Brand Platform. mTLS only, read-only root FS, tmpfs /tmp.",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts"
+  },
+  "dependencies": {
+    "docx": "^8.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  }
+}

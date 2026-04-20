@@ -1,0 +1,163 @@
+# Custom Semgrep правила Brand Platform (INSIGHTS §5, §10, §2).
+# Дополняют OWASP Top-10 / nodejsscan / typescript / react правила.
+#
+# Severity:
+#   ERROR   — блокирует PR (уязвимость, нарушение глобальных инвариантов CLAUDE.md)
+#   WARNING — блокирует PR (MEDIUM-риск, методологический break)
+#   INFO    — лишь сообщение
+rules:
+  # --- 1. JWT и секреты ---
+  - id: bp-no-bcrypt
+    pattern-either:
+      - pattern: import $X from "bcrypt"
+      - pattern: require("bcrypt")
+    message: |
+      Используй bcryptjs, а не bcrypt (CLAUDE.md). bcrypt — native-модуль, ломает Docker Alpine.
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: bp-no-jwt-in-localstorage
+    pattern-either:
+      - pattern: localStorage.setItem("access_token", ...)
+      - pattern: localStorage.setItem("refresh_token", ...)
+      - pattern: localStorage.setItem("jwt", ...)
+      - pattern: localStorage.setItem("token", ...)
+    message: |
+      JWT в localStorage запрещён (CLAUDE.md). access — в памяти (Zustand),
+      refresh — в httpOnly Secure SameSite=Strict cookie.
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: bp-no-hardcoded-anthropic-key
+    pattern-regex: 'sk-ant-[a-zA-Z0-9_-]{20,}'
+    message: |
+      Захардкоженный Anthropic API-ключ в коде. INSIGHTS §5: ключ ТОЛЬКО из env/secret store.
+    languages: [typescript, javascript, json, yaml]
+    severity: ERROR
+
+  # --- 2. Prompt injection ---
+  - id: bp-no-raw-user-input-to-anthropic
+    pattern-either:
+      - pattern: |
+          $CLIENT.messages.create({
+            ...,
+            messages: [{ role: "user", content: $INPUT }],
+            ...
+          })
+    message: |
+      Raw user input идёт напрямую в Anthropic. INSIGHTS §5 TOP-1 риск: обёрни
+      в BriefSanitizerService и `<user_input>…</user_input>` делимитеры.
+    languages: [typescript, javascript]
+    severity: WARNING
+
+  # --- 3. TypeORM ---
+  - id: bp-no-typeorm-synchronize-in-prod
+    pattern-either:
+      - pattern: "synchronize: true"
+    message: |
+      `synchronize: true` опасно в prod. Используй миграции. CLAUDE.md требует
+      `synchronize: process.env.NODE_ENV !== 'production'`.
+    languages: [typescript]
+    severity: ERROR
+
+  # --- 4. SQL injection через query builder ---
+  - id: bp-no-raw-query-with-input
+    pattern-either:
+      - pattern: $REPO.query(`... ${$INPUT} ...`)
+      - pattern: $REPO.query("..." + $INPUT + "...")
+    message: |
+      Raw SQL с конкатенацией пользовательского ввода. Используй $1, $2
+      параметризацию или QueryBuilder.
+    languages: [typescript]
+    severity: ERROR
+
+  # --- 5. Методология BP 3.1 ---
+  # RE2 без lookahead, поэтому матчим archetype с любым строковым значением (>= 1 буква),
+  # а исключения прописываем ниже через pattern-not-regex.
+  - id: bp-no-hardcoded-archetype
+    patterns:
+      - pattern-regex: '(archetype|архетип)\s*[:=]\s*["''][A-Za-zА-Яа-я][^"'']{2,}["'']'
+      - pattern-not-regex: '(Hero|Innocent|Explorer|Sage|Outlaw|Magician|Regular\s*Guy|Lover|Jester|Caregiver|Ruler|Creator|hero|innocent|explorer|sage|outlaw|magician|regular_guy|lover|jester|caregiver|ruler|creator)'
+    paths:
+      exclude:
+        - "*.spec.ts"
+        - "*.test.ts"
+    message: |
+      Архетип должен быть строго из 12 канонических (INSIGHTS §9). Валидируй через
+      methodology-compliance-check, а не через свободный текст.
+    languages: [typescript, javascript]
+    severity: WARNING
+
+  # --- 6. Логирование ---
+  - id: bp-no-console-log-in-prod
+    pattern-either:
+      - pattern: console.log(...)
+    paths:
+      include:
+        - backend/src/**
+      exclude:
+        - backend/src/**/*.spec.ts
+        - backend/scripts/**
+    message: |
+      Используй nest Logger, а не console.log. Нужен структурированный JSON-лог
+      (INSIGHTS §1) с timestamp/userId/requestId.
+    languages: [typescript]
+    severity: WARNING
+
+  # --- 7. Shell injection через child_process ---
+  - id: bp-no-shell-exec-from-user
+    pattern-either:
+      - pattern: child_process.exec($CMD, ...)
+      - pattern: exec($CMD, ...)
+      - pattern: execSync($CMD)
+    message: |
+      exec с переменной — риск shell injection. Используй execFile с массивом аргументов.
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  # --- 8. S3 ObjectLock ---
+  - id: bp-s3-putobject-requires-objectlock
+    pattern: |
+      new PutObjectCommand({
+        Bucket: $BUCKET,
+        ...
+      })
+    message: |
+      Объекты в bp-immutable должны иметь `ObjectLockMode: 'COMPLIANCE'` и
+      `ObjectLockRetainUntilDate` (INSIGHTS §5 delta-6: immutable snapshot на owner_approved).
+    paths:
+      include:
+        - backend/src/artifacts/**
+        - backend/src/exporter/**
+    languages: [typescript]
+    severity: INFO
+
+  # --- 9. Запрет process.env без проверки ---
+  - id: bp-no-process-env-in-services
+    pattern-either:
+      - pattern: process.env.$VAR
+    paths:
+      include:
+        - backend/src/**
+      exclude:
+        - backend/src/config/**
+        - backend/src/main.ts
+    message: |
+      Используй ConfigService (NestJS), а не process.env напрямую. Это упрощает
+      мокирование в тестах и явное перечисление всех переменных.
+    languages: [typescript]
+    severity: INFO
+
+  # --- 10. Запрет "any" в backend ---
+  - id: bp-no-any-type
+    pattern-either:
+      - pattern-regex: ':\s*any(\s|\)|,|=|;|$)'
+    paths:
+      include:
+        - backend/src/**
+      exclude:
+        - backend/src/**/*.spec.ts
+    message: |
+      `any` скрывает ошибки типизации. Используй `unknown` + narrow или явный тип.
+    languages: [typescript]
+    severity: INFO

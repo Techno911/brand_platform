@@ -1,0 +1,8 @@
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+*.ext
+!.gitignore
+!generate-dev-certs.sh

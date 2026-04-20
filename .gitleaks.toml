@@ -1,0 +1,67 @@
+# Gitleaks custom config (INSIGHTS §5 delta-9: запрет force-push + секреты в prompts/).
+# Использует встроенный default + доп. правила под Anthropic/Chirkov.
+title = "Brand Platform gitleaks config"
+
+[extend]
+useDefault = true
+
+# --- Наши правила ---
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key (sk-ant-*)"
+regex = '''sk-ant-[a-zA-Z0-9_-]{20,}'''
+keywords = ["sk-ant-"]
+tags = ["key", "anthropic", "bp-critical"]
+
+[[rules]]
+id = "bp-jwt-secret"
+description = "BP JWT secret leak"
+regex = '''(?i)(JWT_ACCESS_SECRET|JWT_REFRESH_SECRET)\s*=\s*["']?[a-zA-Z0-9+/=_\-]{20,}["']?'''
+keywords = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"]
+tags = ["key", "jwt", "bp-critical"]
+
+[[rules]]
+id = "bp-minio-password"
+description = "MinIO/S3 password leak"
+regex = '''(?i)(MINIO_ROOT_PASSWORD|S3_SECRET_ACCESS_KEY)\s*=\s*["']?[^\s"']{12,}["']?'''
+keywords = ["MINIO_ROOT_PASSWORD", "S3_SECRET_ACCESS_KEY"]
+tags = ["key", "s3"]
+
+[[rules]]
+id = "bp-postgres-password"
+description = "BP PG password leak"
+# RE2 не поддерживает lookahead. Исключения (change-me-in-prod, test_password) вынесены в [allowlist.regexes].
+regex = '''(?i)POSTGRES_PASSWORD\s*=\s*["']?[^\s"']{8,}["']?'''
+keywords = ["POSTGRES_PASSWORD"]
+tags = ["key", "db"]
+
+# --- allowlist ---
+[allowlist]
+description = "Игнорируем заведомо-безопасные плейсхолдеры"
+regexes = [
+  '''sk-ant-\.\.\.''',
+  '''sk-ant-api03-REPLACE''',
+  '''change-me-in-prod''',
+  '''change_me_in_prod''',
+  '''change-me-32-bytes-random''',
+  '''change_me_access_secret_64chars_min_production''',
+  '''change_me_refresh_secret_64chars_min_production''',
+  '''change_me''',
+  '''test_password''',
+  '''test_access_secret_at_least_32_bytes_xxxxxxxxxxxx''',
+  '''test_refresh_secret_at_least_32_bytes_xxxxxxxxxx''',
+  '''bp-admin-local-password''',
+  '''bp-admin-ci-password''',
+]
+paths = [
+  '''\.env\.example$''',
+  '''node_modules/''',
+  '''\.yarn/''',
+  '''dist/''',
+  '''build/''',
+  '''\.git/''',
+  '''\.pnpm-store/''',
+  '''infra/exporter/certs/.*\.(crt|key|srl|csr|ext)$''',
+  '''e2e/playwright-report/''',
+  '''backend/artifacts/''',
+]

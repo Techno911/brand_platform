@@ -1,0 +1,161 @@
+# Brand Platform — production stack.
+# Запуск по запросу пользователя: docker compose -p bp up --build
+#
+# Контейнеры (CLAUDE.md инвариант):
+#   bp-postgres         — PostgreSQL 16 (данные, migrations, audit log)
+#   bp-minio            — S3-совместимое хранилище (immutable snapshots с ObjectLock)
+#   bp-backend          — NestJS 10 API (:3000)
+#   bp-docx-exporter    — изолированный сервис рендера DOCX (read-only root, tmpfs /tmp)
+#   bp-frontend         — nginx (статика + proxy_pass /api на backend)
+#   bp-ingress-nginx    — внешний nginx с TLS 1.3 + mTLS (задача infra/nginx/conf.d/bp.conf)
+#
+version: "3.9"
+
+services:
+  bp-postgres:
+    image: postgres:16-alpine
+    container_name: bp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bp}
+      POSTGRES_USER: ${POSTGRES_USER:-bp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bp}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - bp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bp} -d ${POSTGRES_DB:-bp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - bp-internal
+
+  bp-minio:
+    image: minio/minio:latest
+    container_name: bp-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bp-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bp-admin-local-password}
+    volumes:
+      - bp-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bp-internal
+
+  bp-docx-exporter:
+    build:
+      context: ./docx-exporter
+    container_name: bp-docx-exporter
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    environment:
+      PORT: 4000
+      # TLS_CERT/TLS_KEY/TLS_CLIENT_CA подцепляются когда есть секреты в ./infra/exporter/certs
+      TLS_CERT: ${DOCX_TLS_CERT:-}
+      TLS_KEY: ${DOCX_TLS_KEY:-}
+      TLS_CLIENT_CA: ${DOCX_TLS_CLIENT_CA:-}
+    volumes:
+      - ./infra/exporter/certs:/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - bp-internal
+
+  bp-backend:
+    build:
+      context: ./backend
+    container_name: bp-backend
+    restart: unless-stopped
+    depends_on:
+      bp-postgres:
+        condition: service_healthy
+      bp-minio:
+        condition: service_started
+      bp-docx-exporter:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-bp}:${POSTGRES_PASSWORD:-bp}@bp-postgres:5432/${POSTGRES_DB:-bp}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-in-prod}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-in-prod}
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL_PRIMARY: claude-opus-4-7
+      ANTHROPIC_MODEL_SECONDARY: claude-haiku-4
+      # По умолчанию https — мTLS (INSIGHTS §5 delta-3, delta-7). Для прогона
+      # без сертификатов временно используй DOCX_EXPORTER_URL=http://bp-docx-exporter:4000.
+      DOCX_EXPORTER_URL: ${DOCX_EXPORTER_URL:-https://bp-docx-exporter:4000}
+      DOCX_EXPORTER_CLIENT_CERT: ${DOCX_EXPORTER_CLIENT_CERT:-}
+      DOCX_EXPORTER_CLIENT_KEY: ${DOCX_EXPORTER_CLIENT_KEY:-}
+      DOCX_EXPORTER_CA_CERT: ${DOCX_EXPORTER_CA_CERT:-}
+      S3_ENDPOINT: http://bp-minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-bp-admin}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-bp-admin-local-password}
+      S3_BUCKET_IMMUTABLE: ${S3_BUCKET_IMMUTABLE:-bp-immutable}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      FIREFLIES_API_KEY: ${FIREFLIES_API_KEY:-}
+    volumes:
+      - ./infra/exporter/certs:/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bp-internal
+
+  bp-frontend:
+    build:
+      context: ./frontend
+    container_name: bp-frontend
+    restart: unless-stopped
+    depends_on:
+      bp-backend:
+        condition: service_started
+    networks:
+      - bp-internal
+
+  bp-ingress-nginx:
+    image: nginx:1.27-alpine
+    container_name: bp-ingress-nginx
+    restart: unless-stopped
+    depends_on:
+      - bp-frontend
+      - bp-backend
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - bp-internal
+
+volumes:
+  bp-postgres-data:
+  bp-minio-data:
+
+networks:
+  bp-internal:
+    driver: bridge

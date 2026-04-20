@@ -1,0 +1,26 @@
+# OWASP ZAP baseline rules (INSIGHTS §5). Формат: PluginID<TAB>Action<TAB>URL_regex
+# IGNORE = правило игнорируется (false positive).
+# WARN   = предупреждение без fail.
+# FAIL   = задача zap-baseline падает, PR блокируется.
+#
+# Plugin ID см. https://www.zaproxy.org/docs/alerts/
+#
+# --- Жёсткие требования ---
+10038	FAIL	.*   # Content Security Policy (CSP) — обязателен
+10035	FAIL	.*   # Strict-Transport-Security — HSTS обязателен
+10036	FAIL	.*   # HTTP Server banner — скрыть version
+10054	FAIL	.*   # Cookie без SameSite=Strict — refresh-cookie обязан SameSite=Strict
+10055	FAIL	.*   # Cookie без Secure — refresh-cookie обязан Secure
+10019	FAIL	.*   # Content-Type не установлен
+10020	FAIL	.*   # X-Frame-Options отсутствует
+10021	FAIL	.*   # X-Content-Type-Options отсутствует
+10024	FAIL	.*   # Information Disclosure — Sensitive Information in URL
+10025	FAIL	.*   # Information Disclosure — Sensitive Information in HTTP Referrer
+10063	FAIL	.*   # Permissions-Policy Header Not Set
+# --- Предупреждения (не блокируют, но отображаются) ---
+10037	WARN	.*   # Server Leaks Information via X-Powered-By
+10049	WARN	.*   # Non-Storable Content
+10050	WARN	.*   # Retrieved from Cache
+# --- Игнорируем шумные ---
+10202	IGNORE	.*   # Absence of Anti-CSRF Tokens — у нас JWT access в Authorization header
+10109	IGNORE	.*   # Modern Web Application

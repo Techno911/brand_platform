@@ -1,0 +1,226 @@
+{
+  "source": "Белая Линия — эталонный проект BP 3.1 (стоматология премиум-семейного сегмента, Москва, 2023)",
+  "notes": "Каждый case — отдельный артефакт одной стадии. Прогоняется independently (walk-forward regression, INSIGHTS §4). Expected — не текст, а набор структурных полей и проверяемых ограничений.",
+  "cases": [
+    {
+      "name": "belaya-liniya.legend",
+      "artifact": "legend",
+      "tags": ["stage-2", "stomatology", "premium"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Клиника Белая Линия открыта в 2013 году Валерией Кулагиной, врачом-ортодонтом. Переломной точкой стал 2018 год, когда клиника перешла от 'семейной' модели к премиум-эстетике и пригласила шеф-имплантолога из Швейцарии. В 2021 клиника стала центром обучения для молодых врачей по методике 'безболезненного приёма'. Сегодня у Белой Линии 28 сотрудников, две клиники в Москве, средний чек 18 500 ₽."
+      },
+      "expected": {
+        "legend": {
+          "origin": {
+            "year_range": [2013, 2013],
+            "founder_name_contains": "Кулагина"
+          },
+          "milestones_min_count": 3,
+          "turning_point_year": 2018,
+          "turning_point_event_contains_any": ["премиум", "эстетик", "имплантолог", "швейцар"]
+        },
+        "unverified_claims": {
+          "forbidden_contains_any": ["самая", "лучшая", "уникальная"]
+        },
+        "methodology_compliance": {
+          "canon_section": "BP 3.1 §2 Легенда",
+          "must_pass": true
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.values",
+      "artifact": "values",
+      "tags": ["stage-2", "stomatology", "premium"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "В сессии собственник назвала три ценности: 'безболезненность' (проявляется тем что делаем анестезию без укола по методике TENS, перед любой болезненной процедурой пациент сам нажимает кнопку 'готов'), 'прозрачность в деньгах' (смета согласуется ДО лечения, подписывается вместе, любое изменение >3% требует звонка пациенту), 'человечность' (врач не комментирует запущенное состояние, называем пациента по имени с первого визита, есть напоминалка от администратора за сутки)."
+      },
+      "expected": {
+        "values_count_range": [3, 5],
+        "each_value": {
+          "name_word_count_range": [1, 3],
+          "manifestations_min": 2,
+          "must_have_source_quote": true,
+          "must_have_opposite": true,
+          "name_not_in_cliches": ["качество", "клиентоориентированность", "инновации", "премиум", "индивидуальный подход"]
+        },
+        "methodology_compliance": {
+          "canon_section": "BP 3.1 §2 Ценности",
+          "must_pass": true
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.mission",
+      "artifact": "mission",
+      "tags": ["stage-2", "stomatology", "premium"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Собственник считает, что миссия клиники — делать так, чтобы пациент перестал бояться стоматолога в принципе. Не 'не боялся нашего врача', а 'не боялся приходить к любому зубному'. Это видно в том, что клиника учит своих методике обезболивания других врачей бесплатно. Ценности — безболезненность, прозрачность, человечность. Фин-мотивы в сессии не звучали."
+      },
+      "expected": {
+        "variants_count": 3,
+        "each_variant": {
+          "word_count_max": 20,
+          "no_money_markers": true,
+          "no_leadership_cliches": true,
+          "must_be_active_voice": true,
+          "must_have_action_verb": true
+        },
+        "mercantile_flags_forbidden": ["прибыль", "доход", "выручка", "рост бизнеса"],
+        "methodology_compliance": {
+          "canon_section": "BP 3.1 §2 Миссия",
+          "must_pass": true
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.positioning",
+      "artifact": "positioning",
+      "tags": ["stage-3", "stomatology", "premium"],
+      "input": {
+        "industry": "stomatology",
+        "inputsJson": {
+          "values": ["Безболезненность", "Прозрачность в деньгах", "Человечность"],
+          "mission": "Вернуть людям спокойствие перед стоматологическим креслом",
+          "competitors": ["Сеть32", "Дент Престиж", "Матрёшка Эстетик"],
+          "segment": "Семьи 30-45 с опытом 'плохого' стоматолога",
+          "founder_quote": "Я сама лечилась в 7 клиниках, прежде чем открыла свою."
+        }
+      },
+      "expected": {
+        "archetype": {
+          "primary_in_canon12": true,
+          "primary_expected_any": ["Caregiver", "Sage"],
+          "must_have_evidence": true,
+          "secondary_optional": true
+        },
+        "positioning_statement": {
+          "word_count_max": 25,
+          "must_contain_template_parts": ["для", "который", "это", "потому что"],
+          "no_comparative_without_numbers": true
+        },
+        "we_pair": {
+          "we_are_min": 3,
+          "we_are_not_min": 3
+        },
+        "methodology_compliance": {
+          "canon_section": "BP 3.1 §3 Позиционирование",
+          "must_pass": true
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.message",
+      "artifact": "brand_message",
+      "tags": ["stage-3", "stomatology", "premium"],
+      "input": {
+        "industry": "stomatology",
+        "inputsJson": {
+          "positioning": "Для семей 30-45 с опытом 'плохого' стоматолога Белая Линия — клиника бережного приёма, потому что мы учим других врачей обезболиванию.",
+          "archetype": "Caregiver",
+          "mission": "Вернуть людям спокойствие перед стоматологическим креслом",
+          "values": ["Безболезненность", "Прозрачность", "Человечность"]
+        }
+      },
+      "expected": {
+        "variants_count": 5,
+        "each_variant": {
+          "word_count_range": [4, 7],
+          "no_digits": true,
+          "no_money_markers": true,
+          "no_comparatives_without_explicit_target": true,
+          "no_double_punctuation": true
+        },
+        "rejected_candidates_optional": true,
+        "methodology_compliance": {
+          "canon_section": "BP 3.1 §3 Бренд-месседж",
+          "must_pass": true
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.review-classify.values.cliche",
+      "artifact": "values",
+      "tags": ["validator", "review-classify", "negative", "should-block"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Ценности клиники: высокое качество, индивидуальный подход, инновационные технологии, клиентоориентированность, команда профессионалов."
+      },
+      "expected": {
+        "passed": false,
+        "traffic_light": "red",
+        "issues_contain_any": ["cliche", "methodology_violation"],
+        "methodology_compliance": {
+          "must_pass": false,
+          "violations_min": 3
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.review-classify.message.too-long",
+      "artifact": "brand_message",
+      "tags": ["validator", "review-classify", "negative", "should-block"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Самая современная стоматология премиум класса в центре Москвы с 2013 года"
+      },
+      "expected": {
+        "passed": false,
+        "traffic_light": "red",
+        "issues_contain_any": ["methodology_violation", "cliche", "ambiguity"],
+        "regex_errors_min": 2
+      }
+    },
+    {
+      "name": "belaya-liniya.review-classify.mission.money-marker",
+      "artifact": "mission",
+      "tags": ["validator", "review-classify", "negative", "should-block"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Миссия клиники — ежегодно удваивать выручку за счёт привлечения премиум-клиентов и доминировать в сегменте премиальной стоматологии."
+      },
+      "expected": {
+        "passed": false,
+        "traffic_light": "red",
+        "issues_contain_any": ["methodology_violation"],
+        "methodology_compliance": {
+          "must_pass": false,
+          "violations_contain_any": ["денежные маркеры", "лидерство"]
+        }
+      }
+    },
+    {
+      "name": "belaya-liniya.review-classify.message.good",
+      "artifact": "brand_message",
+      "tags": ["validator", "review-classify", "positive", "should-pass"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Без страха перед каждым приёмом"
+      },
+      "expected": {
+        "passed": true,
+        "traffic_light": "green",
+        "regex_errors_min": 0,
+        "word_count_range": [4, 7]
+      }
+    },
+    {
+      "name": "belaya-liniya.methodology.archetype-not-in-canon",
+      "artifact": "positioning",
+      "tags": ["validator", "methodology", "negative", "should-block"],
+      "input": {
+        "industry": "stomatology",
+        "userText": "Архетип клиники Белая Линия — Mentor+Healer (гибрид двух архетипов)."
+      },
+      "expected": {
+        "methodology_compliance": {
+          "must_pass": false,
+          "violations_contain_any": ["архетип не из 12", "кастомные названия"]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+# Playwright smoke тесты wizard'а (INSIGHTS §9: Playwright MCP для UI-smoke 4 стадий).
+# Прогоняется на синтетическом проекте «Белая Линия» при каждом релизе.
+name: playwright
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: playwright · 4 stages smoke (Белая Линия)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+      POSTGRES_DB: bp
+      POSTGRES_USER: bp
+      POSTGRES_PASSWORD: test_password
+      JWT_ACCESS_SECRET: test_access_secret_at_least_32_bytes_xxxxxxxxxxxx
+      JWT_REFRESH_SECRET: test_refresh_secret_at_least_32_bytes_xxxxxxxxxx
+      # Ключ настоящего Anthropic — только для main-бранча команды (форк не увидит).
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      MINIO_ROOT_USER: bp-admin
+      MINIO_ROOT_PASSWORD: bp-admin-ci-password
+      S3_BUCKET_IMMUTABLE: bp-immutable
+      PLAYWRIGHT_BASE_URL: http://localhost:5173
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: bp
+          POSTGRES_USER: bp
+          POSTGRES_PASSWORD: test_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bp"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Run migrations + seed
+        working-directory: backend
+        run: |
+          npx ts-node scripts/seed.ts
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+
+      - name: Start backend (background)
+        working-directory: backend
+        run: |
+          nohup npm run start:dev > ../backend.log 2>&1 &
+          # Ждём backend на :3000
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/health >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Backend failed to start" >&2
+          cat ../backend.log
+          exit 1
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Start frontend (background)
+        working-directory: frontend
+        run: |
+          nohup npm run dev -- --host > ../frontend.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5173/ >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Frontend failed to start" >&2
+          cat ../frontend.log
+          exit 1
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
