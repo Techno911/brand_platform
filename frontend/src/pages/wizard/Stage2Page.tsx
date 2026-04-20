@@ -651,6 +651,33 @@ export default function Stage2Page() {
         </Tabs>
       </div>
 
+      {/* Full-width CTA-баннер «все 3 артефакта утверждены → отправляйте».
+          Положение — между Tabs и grid'ом — даёт:
+          (a) максимальную визуальную ширину (до suffler-края), а не узкую
+              canvas-колонку, где текст карточки переносился в несколько
+              строк и визуально «терялся»;
+          (b) гарантию что карточка не уезжает за StickySubmitBar внизу
+              экрана (она теперь в верхней части страницы, sticky-бар
+              внизу — два независимых слота);
+          (c) baseline-линию совпадения с tab-row — видно галочки на
+              табах + зелёный баннер под ними как единый signal «всё
+              готово, осталась одна кнопка». Это точка-совпадения глаз
+              после accept последнего блока + auto-advance.
+          Раньше (v3.5.9) карточка жила в canvas-колонке (space-y-5)
+          под FeedbackForm'ом. На challenge-табе (где result=null и
+          canvas-колонка = EmptyCanvasPlaceholder 400px) низ колонки
+          уходил под sticky-bar — карточка обрезалась. Артём 2026-04-20
+          (скриншот): «Ну, внимательнее, пожалуйста. У тебя уехала.» */}
+      {allAccepted && !submittedAt && (
+        <div className="mt-5">
+          <StageCompleteCard
+            submitting={submitting}
+            onSubmit={submitForApproval}
+            error={error}
+          />
+        </div>
+      )}
+
       {/* Canvas 40/60: notes слева, AI-результат справа */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_320px] gap-6 mt-6 pb-24">
         {/* Notes — input 40% */}
@@ -781,29 +808,6 @@ export default function Stage2Page() {
             </>
           ) : (
             <EmptyCanvasPlaceholder expectation={LABELS[active].canvasExpectation} />
-          )}
-
-          {/* Inline CTA-карточка «все 3 артефакта готовы → отправляйте собственнику».
-              ВАЖНО: рендерится ВНЕ condition `current.result ? ... : ...`, потому что
-              полный-стейдж-completion — свойство стадии, а не текущей вкладки. Если
-              маркетолог принял legend/values/mission а сейчас открыл challenge-таб
-              (у которого result отсутствует), карточка всё равно видна — «что дальше»
-              не зависит от того, на какой tab сейчас клик. До этой карточки единственным
-              сигналом о завершении стадии был sticky bar внизу экрана + transient
-              AcceptToast на 2.5 сек. Артём 2026-04-20 (скриншот КДМ, 4/4 блока
-              утверждены): «И что дальше? Ни хрена же не понятно. Надо сделать, чтобы
-              было понятно.» Класс тот же что запись 2026-04-19 «Dead-end after
-              approval» — раньше был per-block (решил NextStepCard после accept одного
-              блока), теперь расширяется на per-stage: после accept всех артефактов —
-              отдельный визуальный якорь прямо под canvas'ом, где глаза маркетолога
-              уже смотрят. Sticky-бар остаётся внизу как дубль для контекста, но
-              основной триггер — эта карточка inline. */}
-          {allAccepted && !submittedAt && (
-            <StageCompleteCard
-              submitting={submitting}
-              onSubmit={submitForApproval}
-              error={error}
-            />
           )}
         </div>
 
